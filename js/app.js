@@ -542,3 +542,52 @@ async function loadAgen() {
         document.getElementById('agen-table-body').innerHTML = html;
     } catch(e) { console.error(e); } finally { hideLoader(); }
 }
+
+
+// ==========================================
+// 8. GLOBAL SEARCH LOGIC
+// ==========================================
+function handleSearch() {
+    const input = document.getElementById('global-search');
+    if(!input) return;
+    
+    const filter = input.value.toLowerCase();
+    
+    // 1. Search in Absensi Table
+    const absensiRows = document.querySelectorAll('#absensi-table-body tr');
+    absensiRows.forEach(row => {
+        const nameCell = row.querySelector('.font-semibold.text-slate-800');
+        if(nameCell) {
+            const name = nameCell.textContent.toLowerCase();
+            row.style.display = name.includes(filter) ? '' : 'none';
+        }
+    });
+
+    // 2. Search in Daftar Agen Table
+    const agenGroups = document.querySelectorAll('#agen-container .searchable-group');
+    agenGroups.forEach(group => {
+        const rows = group.querySelectorAll('.searchable-row');
+        let hasVisibleRow = false;
+        rows.forEach(row => {
+            const nameCell = row.querySelector('.searchable-name');
+            if(nameCell) {
+                const name = nameCell.textContent.toLowerCase();
+                const match = name.includes(filter);
+                row.style.display = match ? '' : 'none';
+                if(match) hasVisibleRow = true;
+            }
+        });
+        // Hide the whole group (division card) if no one matches inside it
+        group.style.display = hasVisibleRow ? '' : 'none';
+    });
+
+    // 3. Search in Denda Table
+    const dendaRows = document.querySelectorAll('#denda-table-body tr');
+    dendaRows.forEach(row => {
+        const nameCell = row.querySelectorAll('td')[1]; // 2nd column is Nama Agen
+        if(nameCell) {
+            const name = nameCell.textContent.toLowerCase();
+            row.style.display = name.includes(filter) ? '' : 'none';
+        }
+    });
+}
