@@ -588,13 +588,29 @@ async function markAbsen(nama, sesi, status, isPj, isEkstra = false) {
 }
 
 async function batalkanAbsen(idAbsensi, nama_agen, tanggal) {
-    if(confirm(`Yakin ingin membatalkan absen untuk ${nama_agen}? Denda (jika ada) juga akan dihapus.`)) {
+    const result = await Swal.fire({
+        title: 'Batalkan Absen?',
+        text: `Yakin ingin membatalkan absen untuk ${nama_agen}? Denda (jika ada) juga akan otomatis dihapus.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Batalkan'
+    });
+    
+    if(result.isConfirmed) {
         showLoader();
-        // Hapus denda terkait (jika ada)
-        await supabaseClient.from('denda').delete().eq('nama_agen', nama_agen).eq('tanggal', tanggal);
-        // Hapus absensi
-        await supabaseClient.from('absensi').delete().eq('id', idAbsensi);
-        loadAbsensiToday();
+        try {
+            await supabaseClient.from('denda').delete().eq('nama_agen', nama_agen).eq('tanggal', tanggal);
+            await supabaseClient.from('absensi').delete().eq('id', idAbsensi);
+            
+            loadAbsensiToday();
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Gagal membatalkan absen.', 'error');
+        } finally {
+            hideLoader();
+        }
     }
 }
 
