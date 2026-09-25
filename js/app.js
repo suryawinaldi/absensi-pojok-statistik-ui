@@ -271,7 +271,7 @@ function renderJadwalUI() {
                         <span class="text-sm font-semibold text-slate-700">${j.nama_agen}</span>
                         <span class="text-[10px] text-slate-500">${isPj}</span>
                     </div>
-                    <button onclick="hapusJadwal(${j.id})" class="text-red-400 hover:text-red-600 p-1">
+                    <button onclick="hapusJadwal('${j.id}')" class="text-red-400 hover:text-red-600 p-1">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
@@ -349,8 +349,9 @@ async function tambahJadwalModal(hari, sesi) {
 }
 
 async function hapusJadwal(id) {
-    if(!id) {
-        Swal.fire('Error', 'ID Jadwal tidak ditemukan. Tabel di database mungkin tidak memiliki kolom id.', 'error');
+    alert("Tombol tertekan! ID: " + id);
+    if(!id || id === 'undefined') {
+        Swal.fire('Error', 'ID Jadwal tidak ditemukan atau belum diset up di database Supabase Anda. Pastikan ada kolom "id" di tabel jadwal_master.', 'error');
         return;
     }
     const result = await Swal.fire({
@@ -477,13 +478,13 @@ async function loadAbsensiToday() {
                 if(absRec) {
                     if(absRec.kehadiran === 'Hadir') {
                         statusHtml = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold"><i class="fa-solid fa-check mr-1"></i> ${absRec.waktu_hadir}</span>`;
-                        btnHtml = `<button onclick="batalkanAbsen(${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
+                        btnHtml = `<button onclick="batalkanAbsen(''${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
                     } else if(absRec.kehadiran === 'Tidak Hadir') {
                         statusHtml = `<span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Tidak Hadir (Bolos)</span>`;
-                        btnHtml = `<button onclick="batalkanAbsen(${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
+                        btnHtml = `<button onclick="batalkanAbsen(''${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
                     } else if(absRec.kehadiran === 'Izin') {
                         statusHtml = `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs font-semibold">Izin / Sakit</span>`;
-                        btnHtml = `<button onclick="batalkanAbsen(${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
+                        btnHtml = `<button onclick="batalkanAbsen(''${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
                     }
                 }
 
@@ -586,7 +587,7 @@ async function markAbsen(nama, sesi, status, isPj, isEkstra = false) {
     loadAbsensiToday();
 }
 
-async function batalkanAbsen(idAbsensi, nama_agen, tanggal) {
+async function batalkanAbsen(''idAbsensi, nama_agen, tanggal) {
     if(confirm(`Yakin ingin membatalkan absen untuk ${nama_agen}? Denda (jika ada) juga akan dihapus.`)) {
         showLoader();
         // Hapus denda terkait (jika ada)
