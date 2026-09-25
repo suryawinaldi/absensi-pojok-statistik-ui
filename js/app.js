@@ -474,7 +474,7 @@ async function loadAbsensiToday() {
     }
 }
 
-async function markAbsen(nama, sesi, status, isPj) {
+async function markAbsen(nama, sesi, status, isPj, isEkstra = false) {
     showLoader();
     const now = await getWaktuServer();
     const tglStr = currentSelectedDate ? currentSelectedDate : now.toISOString().split('T')[0];
@@ -491,7 +491,7 @@ async function markAbsen(nama, sesi, status, isPj) {
     });
 
     // Hitung Denda Otomatis (Anti-Cheat & Dynamic Schedule)
-    if(!isPj && status !== 'Izin') { 
+    if(!isPj && status !== 'Izin' && !isEkstra) { 
         let kenaDenda = false;
         let nominal = 0;
         
@@ -639,9 +639,11 @@ async function loadAgen() {
             const titleMap = {
                 'Taslim': 'Ketua Agen',
                 'Evans': 'Wakil Ketua',
+                'Evanz': 'Wakil Ketua',
                 'Azka Tsabbita': 'Sekretaris & Bendahara',
                 'Azmy': 'Koord. Media Kreatif',
-                'Aslif': 'Koord. Analisis & Pelayanan'
+                'Aslif': 'Koord. Analisis & Pelayanan',
+                'Alif': 'Koord. Analisis & Pelayanan'
             };
 
             const piDivisiName = Object.keys(grouped).find(k => k.toLowerCase().includes('pengurus inti') || k.toLowerCase() === 'pi');
@@ -669,7 +671,7 @@ async function loadAgen() {
                 
                 let agents = grouped[divisi];
                 if(isPI) {
-                    const rank = {'Taslim': 1, 'Evans': 2, 'Azka Tsabbita': 3, 'Azmy': 4, 'Aslif': 5};
+                    const rank = {'Taslim': 1, 'Evans': 2, 'Evanz': 2, 'Azka Tsabbita': 3, 'Azmy': 4, 'Aslif': 5, 'Alif': 5};
                     agents.sort((a,b) => {
                         let rA = 99; let rB = 99;
                         for(const name in rank) { if(a.nama.includes(name)) rA = rank[name]; if(b.nama.includes(name)) rB = rank[name]; }
