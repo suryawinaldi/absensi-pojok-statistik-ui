@@ -1,3 +1,8 @@
+import os
+
+js_path = 'D:/APLIKASI ABSENSI POJOK STATISTIK/js/app.js'
+
+full_app_js = """
 // ==========================================
 // 2. STATE & CLOCK & SETTINGS
 // ==========================================
@@ -35,7 +40,7 @@ setInterval(() => {
 // 3. UI TAB NAVIGATION
 // ==========================================
 function switchTab(tabId) {
-    ['dashboard', 'absensi', 'jadwal', 'denda', 'agen'].forEach(id => {
+    ['dashboard', 'absensi', 'jadwal', 'denda'].forEach(id => {
         const sec = document.getElementById(`sec-${id}`);
         if(sec) sec.classList.add('hidden');
         
@@ -49,14 +54,13 @@ function switchTab(tabId) {
     let activeBtn = document.getElementById(`tab-${tabId}`);
     if(activeBtn) activeBtn.className = "w-full flex items-center gap-3 px-4 py-3 bg-blue-600 text-white rounded-xl transition-all shadow-md";
     
-    const titles = { 'dashboard': 'Dashboard Analytics', 'absensi': 'Absensi Harian', 'jadwal': 'Jadwal Master (Multi-Shift)', 'denda': 'Rekap Denda Kasir', 'agen': 'Daftar Agen Pojok Statistik' };
+    const titles = { 'dashboard': 'Dashboard Analytics', 'absensi': 'Absensi Harian', 'jadwal': 'Jadwal Master (Multi-Shift)', 'denda': 'Rekap Denda Kasir' };
     document.getElementById('page-title').innerText = titles[tabId];
 
     if(tabId === 'dashboard') loadDashboard();
     if(tabId === 'absensi') loadAbsensiToday();
     if(tabId === 'jadwal') loadJadwal();
     if(tabId === 'denda') loadDenda();
-    if(tabId === 'agen') loadAgen();
 }
 
 
@@ -518,27 +522,8 @@ function hideLoader() {
 document.addEventListener('DOMContentLoaded', () => {
     switchTab('dashboard');
 });
+"""
 
-// ==========================================
-// 7. DAFTAR AGEN LOGIC
-// ==========================================
-async function loadAgen() {
-    showLoader();
-    try {
-        const { data } = await supabase.from('agen').select('*').order('divisi').order('nama');
-        let html = '';
-        if(data) {
-            data.forEach(a => {
-                let badge = a.is_bph ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded text-xs font-bold"><i class="fa-solid fa-crown mr-1"></i>BPH</span>' : '<span class="bg-slate-100 text-slate-500 px-2 py-1 rounded text-xs font-semibold">Anggota</span>';
-                html += `
-                <tr class="hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                    <td class="px-6 py-4 font-medium text-slate-700">${a.nama}</td>
-                    <td class="px-6 py-4 text-center"><span class="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs border border-indigo-100 font-semibold">${a.divisi}</span></td>
-                    <td class="px-6 py-4 text-center">${badge}</td>
-                </tr>
-                `;
-            });
-        }
-        document.getElementById('agen-table-body').innerHTML = html;
-    } catch(e) { console.error(e); } finally { hideLoader(); }
-}
+with open(js_path, 'w', encoding='utf-8') as f:
+    f.write(full_app_js.strip())
+print('app.js successfully completely rewritten')
