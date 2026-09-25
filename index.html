@@ -215,19 +215,30 @@
 
             <!-- SECTION: ABSENSI HARIAN -->
             <section id="sec-absensi" class="max-w-5xl mx-auto space-y-6 hidden">
-                <div class="glass-panel p-6 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
-                    <div>
-                        <h3 class="text-2xl font-bold text-slate-800" id="today-date-display">Senin, 01 Jan 2026</h3>
-                        <p class="text-slate-500 mt-1">Sistem membaca jadwal secara otomatis dari Master Jadwal.</p>
+                <div class="glass-panel p-6 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-center border border-slate-100">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center text-3xl shadow-sm">
+                            <i class="fa-solid fa-calendar-check"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-3">
+                                <h2 class="text-3xl font-black text-slate-800" id="today-date-display">Jumat, 25/9/2026</h2>
+                                <input type="date" id="date-picker" onchange="changeDate()" class="border border-slate-300 rounded px-2 py-1 text-sm text-slate-600 focus:outline-blue-500 bg-slate-50 cursor-pointer shadow-sm">
+                            </div>
+                            <p class="text-slate-500 mt-1">Sistem membaca jadwal secara otomatis dari Master Jadwal.</p>
+                        </div>
                     </div>
-                    
-                    <button onclick="bukaModalEkstra()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
-                        <i class="fa-solid fa-user-plus"></i> Agen Ekstra
-                    </button>
-                    <button onclick="loadAbsensiToday()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
-
-                        <i class="fa-solid fa-rotate-right"></i> Refresh
-                    </button>
+                    <div class="flex gap-3 mt-4 md:mt-0">
+                        <button onclick="exportToCSV('absensi')" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-file-excel"></i> Export CSV
+                        </button>
+                        <button onclick="bukaModalEkstra()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-user-plus"></i> Agen Ekstra
+                        </button>
+                        <button onclick="loadAbsensiToday()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-rotate-right"></i> Refresh
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -330,6 +341,11 @@
                     <div>
                         <h3 class="text-2xl font-bold text-slate-800">Riwayat Denda</h3>
                         <p class="text-slate-500 mt-1">Denda terdata secara real-time dari sistem absensi.</p>
+                    </div>
+                    <div>
+                        <button onclick="exportToCSV('denda')" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-file-excel"></i> Export CSV
+                        </button>
                     </div>
                 </div>
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
