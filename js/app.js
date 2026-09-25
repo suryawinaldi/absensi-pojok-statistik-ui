@@ -100,65 +100,91 @@ async function loadDashboard() {
 
         const { data: absensiRecords } = await supabaseClient.from('absensi').select('*');
         let stats = {};
+        
+        const parseTimeStr = (timeStr) => {
+            if(!timeStr || timeStr === '-') return 0;
+            const parts = timeStr.split(/[:.]/);
+            if(parts.length < 2) return 0;
+            return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        };
+
         if (absensiRecords) {
             absensiRecords.forEach(a => {
-                if (!stats[a.nama_agen]) stats[a.nama_agen] = { hadir: 0, bolos: 0, telat: 0 };
-                
+                if (!stats[a.nama_agen]) {
+                    stats[a.nama_agen] = { hadir: 0, denda: 0, menitTotal: 0 };
+                }
                 if (a.kehadiran === 'Hadir') {
                     stats[a.nama_agen].hadir += 1;
                     
-                    // Estimasi Jam (Jumat = 2 jam, Lainnya = 2.5 jam)
-                    const isJumat = new Date(a.tanggal).getDay() === 5;
-                    stats[a.nama_agen].jamTotal = (stats[a.nama_agen].jamTotal || 0) + (isJumat ? 2 : 2.5);
-                    
-                    const dendaRecord = dendaRecords?.find(d => d.tanggal === a.tanggal && d.nama_agen === a.nama_agen);
-                    if(dendaRecord && dendaRecord.nominal_denda === APP_SETTINGS.nominal_denda_telat) {
-                        stats[a.nama_agen].telat += 1;
+                    // Hitung durasi dinamis dalam Menit
+                    if (a.waktu_hadir !== '-') {
+                        const namaHari = HARI_MAP[new Date(a.tanggal).getDay()];
+                        const isJumat = (namaHari === 'Jumat');
+                        const durasiStandar = isJumat ? 120 : 150; // Jumat 2 jam, hari lain 2.5 jam
+                        
+                        let jamMulaiStr = '10:00';
+                        if (APP_SETTINGS && APP_SETTINGS.jadwal_harian && APP_SETTINGS.jadwal_harian[namaHari] && APP_SETTINGS.jadwal_harian[namaHari][a.sesi]) {
+                            jamMulaiStr = APP_SETTINGS.jadwal_harian[namaHari][a.sesi].mulai;
+                        }
+                        
+                        const menitAbsen = parseTimeStr(a.waktu_hadir);
+                        const menitMulai = parseTimeStr(jamMulaiStr);
+                        const menitSelesai = menitMulai + durasiStandar;
+                        
+                        let durasiAsli = menitSelesai - menitAbsen;
+                        if (durasiAsli < 0) durasiAsli = 0; // Kalo absen setelah shift bubar
+                        
+                        stats[a.nama_agen].menitTotal += durasiAsli;
                     }
-                } else if (a.kehadiran === 'Tidak Hadir') {
-                    stats[a.nama_agen].bolos += 1;
+
+                    const dendaRecord = dendaRecords?.find(d => d.tanggal === a.tanggal && d.nama_agen === a.nama_agen);
+                    if (dendaRecord) {
+                        stats[a.nama_agen].denda += dendaRecord.nominal_denda;
+                    }
                 }
             });
         }
 
-        let arr = Object.keys(stats).map(nama => ({
-            nama, hadir: stats[nama].hadir, bolos: stats[nama].bolos, telat: stats[nama].telat, totalBuruk: stats[nama].bolos + stats[nama].telat
-        }));
-
-        // Rajin
-        arr.sort((a, b) => b.hadir - a.hadir);
-        let htmlRajin = '';
-        arr.slice(0, 5).forEach((item, index) => {
-            let badge = index === 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600';
-            let icon = index === 0 ? '<i class="fa-solid fa-crown"></i>' : `#${index+1}`;
-            htmlRajin += `
-            <div class="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors border border-slate-100 mb-2 shadow-sm">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full ${badge} flex items-center justify-center text-xs font-bold">${icon}</div>
-                    <span class="font-semibold text-slate-700">${item.nama}</span>
-                </div>
-                <span class="text-sm font-bold text-blue-600">${item.hadir} Kehadiran</span>
-            </div>`;
+        const arr = Object.keys(stats).map(nama => {
+            return { nama, hadir: stats[nama].hadir, denda: stats[nama].denda, menit: stats[nama].menitTotal };
         });
-        if(arr.length === 0) htmlRajin = '<p class="text-slate-500 text-sm text-center py-4">Belum ada data absensi.</p>';
-        document.getElementById('dash-leaderboard-rajin').innerHTML = htmlRajin;
 
-    
+        // Urutkan Leaderboard Rajin
+        arr.sort((a, b) => {
+            if (b.hadir !== a.hadir) return b.hadir - a.hadir;
+            return a.denda - b.denda;
+        });
+
+        let lbHtml = '';
+        if (arr.length === 0) {
+            lbHtml = '<p class="text-slate-500 text-sm text-center py-4">Belum ada data absensi.</p>';
+        } else {
+            for (let i = 0; i < Math.min(5, arr.length); i++) {
+                const ag = arr[i];
+                const isTop1 = i === 0;
+                lbHtml += `
+                <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 ${isTop1 ? 'border-amber-200 bg-amber-50' : ''}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full ${isTop1 ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-500'} font-bold flex items-center justify-center text-sm">
+                            ${i + 1}
+                        </div>
+                        <span class="font-bold text-slate-700">${ag.nama}</span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-xs font-bold text-slate-500"><i class="fa-solid fa-check text-green-500"></i> ${ag.hadir} Sesi</span>
+                    </div>
+                </div>
+                `;
+            }
+        }
+        document.getElementById('dash-leaderboard-rajin').innerHTML = lbHtml;
+
         // --- CHART JS LOGIC ---
         // Sesi Chart
-        arr.sort((a, b) => b.hadir - a.hadir);
-        const top10Sesi = arr.slice(0, 10);
+        const top10Sesi = [...arr].sort((a, b) => b.hadir - a.hadir).slice(0, 10);
         
-        // Durasi Chart (Asumsi 1 Sesi = 2.5 Jam, kecuali Jumat mungkin beda, tapi kita pakai standar rata-rata 2.5)
-        // Kita hitung durasi aktual per sesi
-        const durasiData = Object.keys(stats).map(nama => {
-            return {
-                nama: nama,
-                jam: stats[nama].jamTotal || (stats[nama].hadir * 2.5)
-            };
-        });
-        durasiData.sort((a, b) => b.jam - a.jam);
-        const top10Durasi = durasiData.slice(0, 10);
+        // Durasi Chart (Menit)
+        const top10Durasi = [...arr].sort((a, b) => b.menit - a.menit).slice(0, 10);
 
         if(window.chartSesiInstance) window.chartSesiInstance.destroy();
         if(window.chartDurasiInstance) window.chartDurasiInstance.destroy();
@@ -168,7 +194,7 @@ async function loadDashboard() {
             window.chartSesiInstance = new Chart(ctxSesi, {
                 type: 'bar',
                 data: {
-                    labels: top10Sesi.map(x => x.nama),
+                    labels: top10Sesi.map(x => x.nama.split(' ')[0]), // Ambil nama depan biar muat
                     datasets: [{
                         label: 'Total Sesi Jaga',
                         data: top10Sesi.map(x => x.hadir),
@@ -187,10 +213,10 @@ async function loadDashboard() {
             window.chartDurasiInstance = new Chart(ctxDurasi, {
                 type: 'bar',
                 data: {
-                    labels: top10Durasi.map(x => x.nama),
+                    labels: top10Durasi.map(x => x.nama.split(' ')[0]), // Ambil nama depan biar muat
                     datasets: [{
-                        label: 'Estimasi Durasi Jaga (Jam)',
-                        data: top10Durasi.map(x => x.jam),
+                        label: 'Total Durasi Jaga (Menit)',
+                        data: top10Durasi.map(x => x.menit),
                         backgroundColor: 'rgba(16, 185, 129, 0.7)',
                         borderColor: 'rgba(16, 185, 129, 1)',
                         borderWidth: 1,
@@ -200,9 +226,12 @@ async function loadDashboard() {
                 options: { responsive: true, maintainAspectRatio: false }
             });
         }
-    } catch (e) { console.error(e); } finally { hideLoader(); }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        hideLoader();
+    }
 }
-
 // ==========================================
 // 4. JADWAL MASTER (SEARCH & TAG) LOGIC
 // ==========================================
