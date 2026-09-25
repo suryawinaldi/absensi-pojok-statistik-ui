@@ -375,7 +375,7 @@ async function loadAbsensiToday() {
         document.getElementById('absensi-table-body').innerHTML = html;
     } catch(e) {
         console.error("Supabase Error:", e);
-        document.getElementById('absensi-table-body').innerHTML = "<tr><td colspan='5' class='text-center py-8 text-red-500'>Gagal terhubung ke database. Cek koneksi internet atau pengaturan Supabase.</td></tr>";
+        document.getElementById('absensi-table-body').innerHTML = "<tr><td colspan='5' class='text-center py-8 text-red-500'>Gagal terhubung ke database. Error: ' + (e.message || JSON.stringify(e)) + '<br><br>⚠️ PASTIKAN Anda membuka link dari Vercel, BUKAN klik 2x file index.html di laptop Anda. Fitur keamanan browser memblokir koneksi database jika dibuka secara lokal.</td></tr>";
     } finally {
         hideLoader();
     }
