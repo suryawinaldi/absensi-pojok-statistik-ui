@@ -1,3 +1,18 @@
+
+// ==========================================
+// ANTI-CHEAT WAKTU SERVER
+// ==========================================
+async function getWaktuServer() {
+    try {
+        const res = await fetch('http://worldtimeapi.org/api/timezone/Asia/Jakarta');
+        const data = await res.json();
+        return new Date(data.datetime);
+    } catch(e) {
+        console.warn('Gagal fetch worldtimeapi, menggunakan jam lokal sebagai fallback');
+        return new Date(); // Fallback ke lokal jika API down
+    }
+}
+
 // ==========================================
 // 2. STATE & CLOCK & SETTINGS
 // ==========================================
@@ -461,7 +476,7 @@ async function loadAbsensiToday() {
 
 async function markAbsen(nama, sesi, status, isPj) {
     showLoader();
-    const now = new Date();
+    const now = await getWaktuServer();
     const tglStr = currentSelectedDate ? currentSelectedDate : now.toISOString().split('T')[0];
     const waktuStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
 
@@ -475,8 +490,8 @@ async function markAbsen(nama, sesi, status, isPj) {
         is_pj: isPj
     });
 
-    // Hitung Denda Otomatis!
-    if(!isPj) { 
+    // Hitung Denda Otomatis (Anti-Cheat & Dynamic Schedule)
+    if(!isPj && status !== 'Izin') { 
         let kenaDenda = false;
         let nominal = 0;
         
@@ -494,12 +509,18 @@ async function markAbsen(nama, sesi, status, isPj) {
             };
             
             const namaHari = HARI_MAP[new Date(tglStr).getDay()];
-            const isJumat = (namaHari === 'Jumat');
-            const batasPagi = parseTime(isJumat ? (APP_SETTINGS.jam_mulai_pagi_jumat || APP_SETTINGS.jam_mulai_pagi) : APP_SETTINGS.jam_mulai_pagi) + APP_SETTINGS.toleransi_telat_menit;
-            const batasSiang = parseTime(isJumat ? (APP_SETTINGS.jam_mulai_siang_jumat || APP_SETTINGS.jam_mulai_siang) : APP_SETTINGS.jam_mulai_siang) + APP_SETTINGS.toleransi_telat_menit;
-
-            if(sesi === 'Pagi' && totalMenit > batasPagi) { kenaDenda = true; nominal = APP_SETTINGS.nominal_denda_telat; }
-            if(sesi === 'Siang' && totalMenit > batasSiang) { kenaDenda = true; nominal = APP_SETTINGS.nominal_denda_telat; }
+            
+            // Dapatkan aturan hari ini dari JSON jadwal_harian
+            if(APP_SETTINGS.jadwal_harian && APP_SETTINGS.jadwal_harian[namaHari]) {
+                const aturanHariIni = APP_SETTINGS.jadwal_harian[namaHari][sesi];
+                if(aturanHariIni && aturanHariIni.aktif) {
+                    const batasTelat = parseTime(aturanHariIni.mulai) + APP_SETTINGS.toleransi_telat_menit;
+                    if(totalMenit > batasTelat) {
+                        kenaDenda = true;
+                        nominal = APP_SETTINGS.nominal_denda_telat;
+                    }
+                }
+            }
         }
 
         if(kenaDenda) {
@@ -716,31 +737,69 @@ function handleSearch() {
 // 9. PENGATURAN LOGIC
 // ==========================================
 function loadSettingsUI() {
-    document.getElementById('set-jam-pagi').value = APP_SETTINGS.jam_mulai_pagi;
-    document.getElementById('set-jam-siang').value = APP_SETTINGS.jam_mulai_siang;
-    
-    document.getElementById('set-jam-pagi-jumat').value = APP_SETTINGS.jam_mulai_pagi_jumat || APP_SETTINGS.jam_mulai_pagi;
-    document.getElementById('set-jam-siang-jumat').value = APP_SETTINGS.jam_mulai_siang_jumat || APP_SETTINGS.jam_mulai_siang;
-    
+    // Basic Settings
     document.getElementById('set-toleransi').value = APP_SETTINGS.toleransi_telat_menit;
     document.getElementById('set-denda-telat').value = APP_SETTINGS.nominal_denda_telat;
     document.getElementById('set-denda-bolos').value = APP_SETTINGS.nominal_denda_bolos;
+    
+    // Dynamic Schedule
+    let html = '';
+    const harian = APP_SETTINGS.jadwal_harian || {};
+    
+    HARI_LIST.forEach(hari => {
+        const p = harian[hari]?.Pagi || { aktif: true, mulai: '10:00' };
+        const s = harian[hari]?.Siang || { aktif: true, mulai: '13:30' };
+        
+        html += `
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-4">
+            <div class="w-24 font-bold text-slate-700 text-lg">${hari}</div>
+            
+            <div class="flex-1 bg-blue-50/50 p-2 rounded border border-blue-100 flex items-center gap-2">
+                <input type="checkbox" id="cb-pagi-${hari}" ${p.aktif ? 'checked' : ''} class="w-4 h-4">
+                <label class="text-sm font-semibold text-blue-700 w-12">PAGI</label>
+                <input type="time" id="jam-pagi-${hari}" value="${p.mulai.substring(0,5)}" class="p-1 text-sm border rounded w-full">
+            </div>
+            
+            <div class="flex-1 bg-orange-50/50 p-2 rounded border border-orange-100 flex items-center gap-2">
+                <input type="checkbox" id="cb-siang-${hari}" ${s.aktif ? 'checked' : ''} class="w-4 h-4">
+                <label class="text-sm font-semibold text-orange-700 w-12">SIANG</label>
+                <input type="time" id="jam-siang-${hari}" value="${s.mulai.substring(0,5)}" class="p-1 text-sm border rounded w-full">
+            </div>
+        </div>
+        `;
+    });
+    
+    document.getElementById('settings-days-container').innerHTML = html;
 }
 
 async function simpanPengaturan() {
     showLoader();
+    
+    let newJadwal = {};
+    HARI_LIST.forEach(hari => {
+        newJadwal[hari] = {
+            Pagi: {
+                aktif: document.getElementById(`cb-pagi-${hari}`).checked,
+                mulai: document.getElementById(`jam-pagi-${hari}`).value + (document.getElementById(`jam-pagi-${hari}`).value.length === 5 ? ':00' : '')
+            },
+            Siang: {
+                aktif: document.getElementById(`cb-siang-${hari}`).checked,
+                mulai: document.getElementById(`jam-siang-${hari}`).value + (document.getElementById(`jam-siang-${hari}`).value.length === 5 ? ':00' : '')
+            }
+        };
+    });
+
     const newData = {
-        jam_mulai_pagi: document.getElementById('set-jam-pagi').value + (document.getElementById('set-jam-pagi').value.length === 5 ? ':00' : ''),
-        jam_mulai_siang: document.getElementById('set-jam-siang').value + (document.getElementById('set-jam-siang').value.length === 5 ? ':00' : ''),
         toleransi_telat_menit: parseInt(document.getElementById('set-toleransi').value),
         nominal_denda_telat: parseInt(document.getElementById('set-denda-telat').value),
-        nominal_denda_bolos: parseInt(document.getElementById('set-denda-bolos').value)
+        nominal_denda_bolos: parseInt(document.getElementById('set-denda-bolos').value),
+        jadwal_harian: newJadwal
     };
     
     try {
         await supabaseClient.from('pengaturan_sistem').update(newData).eq('id', 1);
         APP_SETTINGS = newData;
-        Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Pengaturan berhasil diperbarui.', timer: 2000, showConfirmButton: false });
+        Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Pengaturan jadwal dinamis berhasil diperbarui.', timer: 2000, showConfirmButton: false });
     } catch(e) {
         alert('Gagal menyimpan pengaturan.');
     } finally {
