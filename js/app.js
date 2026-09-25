@@ -16,7 +16,7 @@ const HARI_MAP = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'
 
 async function fetchSettings() {
     try {
-        const { data } = await supabase.from('pengaturan_sistem').select('*').eq('id', 1).single();
+        const { data } = await supabaseClient.from('pengaturan_sistem').select('*').eq('id', 1).single();
         if(data) {
             APP_SETTINGS = data;
         }
@@ -66,10 +66,10 @@ function switchTab(tabId) {
 async function loadDashboard() {
     showLoader();
     try {
-        const { count: totalAgen } = await supabase.from('agen').select('*', { count: 'exact', head: true });
+        const { count: totalAgen } = await supabaseClient.from('agen').select('*', { count: 'exact', head: true });
         document.getElementById('dash-total-agen').innerText = totalAgen || 0;
 
-        const { data: dendaRecords } = await supabase.from('denda').select('*');
+        const { data: dendaRecords } = await supabaseClient.from('denda').select('*');
         let tunggakan = 0; let lunas = 0;
         if (dendaRecords) {
             dendaRecords.forEach(d => {
@@ -80,7 +80,7 @@ async function loadDashboard() {
         document.getElementById('dash-denda-tunggakan').innerText = 'Rp ' + tunggakan.toLocaleString('id-ID');
         document.getElementById('dash-denda-lunas').innerText = 'Rp ' + lunas.toLocaleString('id-ID');
 
-        const { data: absensiRecords } = await supabase.from('absensi').select('*');
+        const { data: absensiRecords } = await supabaseClient.from('absensi').select('*');
         let stats = {};
         if (absensiRecords) {
             absensiRecords.forEach(a => {
@@ -129,7 +129,7 @@ async function loadDashboard() {
 async function loadJadwal() {
     showLoader();
     try {
-        const resAgen = await supabase.from('agen').select('*').order('nama');
+        const resAgen = await supabaseClient.from('agen').select('*').order('nama');
         allAgents = resAgen.data || [];
         
         await fetchJadwalData();
@@ -139,7 +139,7 @@ async function loadJadwal() {
 }
 
 async function fetchJadwalData() {
-    const resJadwal = await supabase.from('jadwal_master').select('*');
+    const resJadwal = await supabaseClient.from('jadwal_master').select('*');
     allJadwal = resJadwal.data || [];
     renderJadwalUI();
 }
@@ -204,7 +204,7 @@ function renderJadwalUI() {
 
 async function tambahJadwalModal(hari, sesi) {
     if(allAgents.length === 0) {
-        const { data } = await supabase.from('agen').select('*').order('nama');
+        const { data } = await supabaseClient.from('agen').select('*').order('nama');
         allAgents = data || [];
     }
 
@@ -233,7 +233,7 @@ async function tambahJadwalModal(hari, sesi) {
         const nama = document.getElementById('swal-agen').value;
         const isPj = document.getElementById('swal-ispj').checked;
         
-        await supabase.from('jadwal_master').insert({ hari, sesi, nama_agen: nama, is_pj: isPj });
+        await supabaseClient.from('jadwal_master').insert({ hari, sesi, nama_agen: nama, is_pj: isPj });
         await fetchJadwalData();
         hideLoader();
     }
@@ -242,7 +242,7 @@ async function tambahJadwalModal(hari, sesi) {
 async function hapusJadwal(id) {
     if(confirm('Hapus agen ini dari jadwal?')) {
         showLoader();
-        await supabase.from('jadwal_master').delete().eq('id', id);
+        await supabaseClient.from('jadwal_master').delete().eq('id', id);
         await fetchJadwalData();
         hideLoader();
     }
@@ -253,7 +253,7 @@ async function hapusJadwal(id) {
 // ==========================================
 async function bukaModalEkstra() {
     if(allAgents.length === 0) {
-        const { data } = await supabase.from('agen').select('*').order('nama');
+        const { data } = await supabaseClient.from('agen').select('*').order('nama');
         allAgents = data || [];
     }
 
@@ -300,10 +300,10 @@ async function loadAbsensiToday() {
         }
 
         // 1. Get today's expected schedule
-        const { data: schedule } = await supabase.from('jadwal_master').select('*').eq('hari', namaHari);
+        const { data: schedule } = await supabaseClient.from('jadwal_master').select('*').eq('hari', namaHari);
         
         // 2. Get actual check-ins for today
-        const { data: attendance } = await supabase.from('absensi').select('*').eq('tanggal', tglStr);
+        const { data: attendance } = await supabaseClient.from('absensi').select('*').eq('tanggal', tglStr);
 
         let html = '';
         
@@ -388,7 +388,7 @@ async function markAbsen(nama, sesi, status, isPj) {
     const waktuStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
 
     // Insert ke Absensi
-    await supabase.from('absensi').insert({
+    await supabaseClient.from('absensi').insert({
         tanggal: tglStr,
         nama_agen: nama,
         sesi: sesi,
@@ -423,7 +423,7 @@ async function markAbsen(nama, sesi, status, isPj) {
         }
 
         if(kenaDenda) {
-            await supabase.from('denda').insert({
+            await supabaseClient.from('denda').insert({
                 tanggal: tglStr,
                 nama_agen: nama,
                 nominal_denda: nominal,
@@ -440,9 +440,9 @@ async function batalkanAbsen(idAbsensi, nama_agen, tanggal) {
     if(confirm(`Yakin ingin membatalkan absen untuk ${nama_agen}? Denda (jika ada) juga akan dihapus.`)) {
         showLoader();
         // Hapus denda terkait (jika ada)
-        await supabase.from('denda').delete().eq('nama_agen', nama_agen).eq('tanggal', tanggal);
+        await supabaseClient.from('denda').delete().eq('nama_agen', nama_agen).eq('tanggal', tanggal);
         // Hapus absensi
-        await supabase.from('absensi').delete().eq('id', idAbsensi);
+        await supabaseClient.from('absensi').delete().eq('id', idAbsensi);
         loadAbsensiToday();
     }
 }
@@ -453,7 +453,7 @@ async function batalkanAbsen(idAbsensi, nama_agen, tanggal) {
 async function loadDenda() {
     showLoader();
     try {
-        const { data: dendaRecords } = await supabase.from('denda').select('*').order('tanggal', { ascending: false });
+        const { data: dendaRecords } = await supabaseClient.from('denda').select('*').order('tanggal', { ascending: false });
         
         let html = '';
         if(!dendaRecords || dendaRecords.length === 0) {
@@ -490,14 +490,14 @@ async function loadDenda() {
 
 async function lunasiDenda(id) {
     showLoader();
-    await supabase.from('denda').update({ status_lunas: true }).eq('id', id);
+    await supabaseClient.from('denda').update({ status_lunas: true }).eq('id', id);
     loadDenda();
 }
 
 async function hapusDenda(id) {
     if(confirm('Hapus record denda ini?')) {
         showLoader();
-        await supabase.from('denda').delete().eq('id', id);
+        await supabaseClient.from('denda').delete().eq('id', id);
         loadDenda();
     }
 }
@@ -525,7 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadAgen() {
     showLoader();
     try {
-        const { data } = await supabase.from('agen').select('*').order('divisi').order('nama');
+        const { data } = await supabaseClient.from('agen').select('*').order('divisi').order('nama');
         let html = '';
         if(data) {
             data.forEach(a => {
