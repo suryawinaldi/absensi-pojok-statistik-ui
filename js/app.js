@@ -411,7 +411,7 @@ async function bukaModalEkstra() {
     if(isConfirmed) {
         const nama = document.getElementById('swal-ekstra-agen').value;
         const sesi = document.getElementById('swal-ekstra-sesi').value;
-        await markAbsen(nama, sesi, 'Hadir', false); // Extra always normal agent
+        await markAbsen(nama, sesi, 'Hadir', false, true); // Ekstra kebal denda telat
     }
 }
 
