@@ -172,7 +172,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="max-w-3xl mx-auto">
                     <!-- Leaderboard Terajin -->
                     <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
                         <h3 class="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
@@ -183,16 +183,7 @@
                         </div>
                     </div>
 
-                    <!-- Hall of Shame (Sering Bolos/Telat) -->
-                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                        <h3 class="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-                            <i class="fa-solid fa-triangle-exclamation text-red-500"></i> Sering Telat / Bolos
-                        </h3>
-                        <div class="space-y-3" id="dash-leaderboard-malas">
-                            <p class="text-slate-500 text-sm text-center py-4">Memuat data...</p>
-                        </div>
                     </div>
-                </div>
             </section>
 
             <!-- SECTION: ABSENSI HARIAN -->
@@ -202,7 +193,12 @@
                         <h3 class="text-2xl font-bold text-slate-800" id="today-date-display">Senin, 01 Jan 2026</h3>
                         <p class="text-slate-500 mt-1">Sistem membaca jadwal secara otomatis dari Master Jadwal.</p>
                     </div>
+                    
+                    <button onclick="bukaModalEkstra()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-user-plus"></i> Agen Ekstra
+                    </button>
                     <button onclick="loadAbsensiToday()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2">
+
                         <i class="fa-solid fa-rotate-right"></i> Refresh
                     </button>
                 </div>
@@ -227,41 +223,21 @@
                 </div>
             </section>
 
-            <!-- SECTION: MASTER JADWAL (KANBAN) -->
-            <section id="sec-jadwal" class="hidden h-full flex flex-col">
+            
+            <!-- SECTION: MASTER JADWAL (SEARCH & TAG) -->
+            <section id="sec-jadwal" class="hidden h-full flex flex-col max-w-6xl mx-auto w-full">
                 <div class="flex justify-between items-center mb-6 flex-shrink-0">
                     <div>
-                        <h3 class="text-2xl font-bold text-slate-800">Atur Jadwal (Drag & Drop)</h3>
-                        <p class="text-slate-500 mt-1">Perubahan langsung tersimpan otomatis ke database tanpa loading.</p>
+                        <h3 class="text-2xl font-bold text-slate-800">Atur Jadwal (Multi-Shift)</h3>
+                        <p class="text-slate-500 mt-1">Tambahkan agen ke hari dan sesi yang diinginkan. Satu agen bisa jaga di banyak hari.</p>
                     </div>
-                    <button onclick="saveJadwalToDB()" id="btn-save-jadwal" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-lg shadow-blue-500/30 transition-all flex items-center gap-2">
-                        <i class="fa-solid fa-cloud-arrow-up"></i> Simpan Permanen
-                    </button>
                 </div>
 
-                <!-- Kanban Board -->
-                <div class="flex-1 overflow-x-auto pb-4">
-                    <div class="flex gap-6 h-full items-start" style="min-width: max-content;">
-                        
-                        <!-- Kolom Daftar Agen Bebas -->
-                        <div class="w-64 bg-white rounded-2xl flex flex-col flex-shrink-0 h-[650px] border border-slate-200 shadow-sm">
-                            <div class="p-4 border-b border-slate-100 bg-slate-50 rounded-t-2xl">
-                                <h4 class="font-bold text-slate-700 flex items-center gap-2">
-                                    <i class="fa-solid fa-users text-blue-500"></i> Daftar Agen
-                                </h4>
-                            </div>
-                            <div id="pool-agen" class="p-3 flex-1 overflow-y-auto space-y-2 bg-slate-50/50">
-                                <!-- Loaded via JS -->
-                            </div>
-                        </div>
-
-                        <!-- Kolom Hari-Hari -->
-                        <!-- Di-generate via JS agar rapi -->
-                        <div id="kanban-days-container" class="flex gap-6 h-full"></div>
-
-                    </div>
+                <div class="flex-1 overflow-y-auto pb-8 space-y-6" id="jadwal-days-container">
+                    <!-- Loaded via JS -->
                 </div>
             </section>
+
 
             <!-- SECTION: REKAP DENDA -->
             <section id="sec-denda" class="max-w-4xl mx-auto hidden space-y-6">

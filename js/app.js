@@ -61,240 +61,120 @@
         if(tabId === 'dashboard') loadDashboard();
     }
 
+    
     // ==========================================
-    // 4. KANBAN (JADWAL MASTER) LOGIC
+    // 4. JADWAL MASTER (SEARCH & TAG) LOGIC
     // ==========================================
     async function loadKanban() {
         showLoader();
-        
-        // Fetch Agents
-        const resAgen = await supabase.from('agen').select('*');
+        const resAgen = await supabase.from('agen').select('*').order('nama');
         allAgents = resAgen.data || [];
         
-        // Fetch Jadwal
-        const resJadwal = await supabase.from('jadwal_master').select('*');
-        allJadwal = resJadwal.data || [];
-        
-        renderKanbanUI();
+        await fetchJadwalData();
         hideLoader();
     }
 
-    function renderKanbanUI() {
-        const poolDiv = document.getElementById('pool-agen');
-        const daysContainer = document.getElementById('kanban-days-container');
-        
-        poolDiv.innerHTML = '';
-        daysContainer.innerHTML = '';
+    async function fetchJadwalData() {
+        const resJadwal = await supabase.from('jadwal_master').select('*');
+        allJadwal = resJadwal.data || [];
+        renderJadwalUI();
+    }
 
-        // Find assigned agents
-        let assignedNames = new Set(allJadwal.map(j => j.nama_agen));
+    function renderJadwalUI() {
+        const container = document.getElementById('jadwal-days-container');
+        let html = '';
 
-        // Render unassigned to pool
-        allAgents.forEach(a => {
-            if(!assignedNames.has(a.nama)) {
-                poolDiv.appendChild(createAgentCard(a.nama, a.divisi));
-            }
-        });
-
-        // Render Columns for each day
         HARI_LIST.forEach(hari => {
-            let colHTML = `
-            <div class="w-80 bg-white rounded-2xl flex flex-col flex-shrink-0 h-[650px] border border-slate-200 shadow-sm">
-                <div class="p-4 border-b border-slate-100 bg-slate-50 text-center rounded-t-2xl">
-                    <h4 class="font-bold text-slate-800">${hari}</h4>
+            let pagiCards = '';
+            let siangCards = '';
+
+            allJadwal.filter(j => j.hari === hari).forEach(j => {
+                const isPj = j.is_pj ? '<i class="fa-solid fa-crown text-amber-500 mr-1"></i> PJ' : 'Agen';
+                const card = `
+                    <div class="flex justify-between items-center bg-white border border-slate-200 p-2 rounded-lg shadow-sm">
+                        <div class="flex flex-col">
+                            <span class="text-sm font-semibold text-slate-700">${j.nama_agen}</span>
+                            <span class="text-[10px] text-slate-500">${isPj}</span>
+                        </div>
+                        <button onclick="hapusJadwal(${j.id})" class="text-red-400 hover:text-red-600 p-1">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                `;
+                if(j.sesi === 'Pagi') pagiCards += card;
+                else siangCards += card;
+            });
+
+            html += `
+            <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row gap-6">
+                <div class="w-full md:w-1/4">
+                    <h4 class="text-xl font-bold text-slate-800">${hari}</h4>
+                    <p class="text-xs text-slate-500">Atur jadwal jaga untuk hari ini.</p>
                 </div>
-                <div class="flex-1 overflow-y-auto p-3 space-y-4 bg-slate-50/50">
-                    
-                    <!-- SESI PAGI -->
-                    <div class="bg-blue-50/50 rounded-xl border border-blue-100 p-3">
-                        <div class="text-xs font-bold text-blue-600 mb-2 uppercase flex justify-between">
-                            <span>Sesi Pagi</span> <span>10:00 - 12:30</span>
+                
+                <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- PAGI -->
+                    <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="font-bold text-blue-700 text-sm">SESI PAGI</span>
+                            <button onclick="tambahJadwalModal('${hari}', 'Pagi')" class="text-xs bg-blue-600 text-white px-2 py-1 rounded shadow-sm hover:bg-blue-700">+ Tambah</button>
                         </div>
-                        <div class="text-xs text-slate-500 mb-1">PJ Pagi (Maks 1):</div>
-                        <div id="pj-pagi-${hari}" class="pj-zone rounded-lg p-2 mb-2 flex flex-col gap-2" data-hari="${hari}" data-sesi="Pagi" data-ispj="true"></div>
-                        
-                        <div class="text-xs text-slate-500 mb-1 mt-2">Agen Pagi:</div>
-                        <div id="agen-pagi-${hari}" class="min-h-[50px] rounded-lg p-2 flex flex-col gap-2 bg-white/50 border border-dashed border-slate-300" data-hari="${hari}" data-sesi="Pagi" data-ispj="false"></div>
+                        <div class="space-y-2 min-h-[50px]">${pagiCards || '<p class="text-xs text-slate-400 italic">Belum ada agen</p>'}</div>
                     </div>
 
-                    <!-- SESI SIANG -->
-                    <div class="bg-green-50/50 rounded-xl border border-green-100 p-3">
-                        <div class="text-xs font-bold text-green-600 mb-2 uppercase flex justify-between">
-                            <span>Sesi Siang</span> <span>13:30 - 16:00</span>
+                    <!-- SIANG -->
+                    <div class="bg-green-50/50 p-4 rounded-xl border border-green-100">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="font-bold text-green-700 text-sm">SESI SIANG</span>
+                            <button onclick="tambahJadwalModal('${hari}', 'Siang')" class="text-xs bg-green-600 text-white px-2 py-1 rounded shadow-sm hover:bg-green-700">+ Tambah</button>
                         </div>
-                        <div class="text-xs text-slate-500 mb-1">PJ Siang (Maks 1):</div>
-                        <div id="pj-siang-${hari}" class="pj-zone rounded-lg p-2 mb-2 flex flex-col gap-2" data-hari="${hari}" data-sesi="Siang" data-ispj="true"></div>
-                        
-                        <div class="text-xs text-slate-500 mb-1 mt-2">Agen Siang:</div>
-                        <div id="agen-siang-${hari}" class="min-h-[50px] rounded-lg p-2 flex flex-col gap-2 bg-white/50 border border-dashed border-slate-300" data-hari="${hari}" data-sesi="Siang" data-ispj="false"></div>
+                        <div class="space-y-2 min-h-[50px]">${siangCards || '<p class="text-xs text-slate-400 italic">Belum ada agen</p>'}</div>
                     </div>
-
                 </div>
             </div>`;
-            
-            daysContainer.insertAdjacentHTML('beforeend', colHTML);
-
-            // Populate existing data
-            const dayJadwal = allJadwal.filter(j => j.hari === hari);
-            dayJadwal.forEach(j => {
-                let targetId = j.is_pj ? `pj-${j.sesi.toLowerCase()}-${hari}` : `agen-${j.sesi.toLowerCase()}-${hari}`;
-                const agenData = allAgents.find(a => a.nama === j.nama_agen);
-                const divisi = agenData ? agenData.divisi : '';
-                document.getElementById(targetId).appendChild(createAgentCard(j.nama_agen, divisi, j.is_pj));
-            });
         });
-
-        initSortable();
+        container.innerHTML = html;
     }
 
-    function createAgentCard(nama, divisi, isPj = false) {
-        let div = document.createElement('div');
-        div.className = "bg-white p-3 rounded-lg border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-blue-400 transition-colors flex flex-col";
-        div.setAttribute('data-nama', nama);
-        div.innerHTML = `
-            <div class="flex justify-between items-center">
-                <span class="font-medium text-slate-700 text-sm">${nama}</span>
-                <i class="fa-solid fa-grip-vertical text-slate-300"></i>
+    async function tambahJadwalModal(hari, sesi) {
+        let optionsHtml = '<select id="swal-agen" class="w-full p-2 border rounded-lg mb-3">';
+        allAgents.forEach(a => {
+            optionsHtml += `<option value="${a.nama}">${a.nama} (${a.divisi})</option>`;
+        });
+        optionsHtml += '</select>';
+        optionsHtml += `
+            <div class="flex items-center gap-2 mt-2">
+                <input type="checkbox" id="swal-ispj" class="w-4 h-4">
+                <label for="swal-ispj" class="text-sm font-semibold">Tandai sebagai Penanggung Jawab (PJ)</label>
             </div>
-            <span class="text-[10px] px-2 py-0.5 rounded-full mt-2 w-max ${divisi.includes('Inti') ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}">${divisi}</span>
         `;
-        return div;
-    }
 
-    function initSortable() {
-        Sortable.create(document.getElementById('pool-agen'), { group: 'shared', animation: 150, ghostClass: 'drag-ghost' });
-        
-        HARI_LIST.forEach(hari => {
-            ['pagi', 'siang'].forEach(sesi => {
-                // PJ Zone (Max 1)
-                Sortable.create(document.getElementById(`pj-${sesi}-${hari}`), {
-                    group: { name: 'shared', put: function (to) { return to.el.children.length < 1; } },
-                    animation: 150, ghostClass: 'drag-ghost'
-                });
-                // Normal Zone
-                Sortable.create(document.getElementById(`agen-${sesi}-${hari}`), {
-                    group: 'shared', animation: 150, ghostClass: 'drag-ghost'
-                });
-            });
-        });
-    }
-
-    async function saveJadwalToDB() {
-        const btn = document.getElementById('btn-save-jadwal');
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan...`;
-        
-        let newSchedules = [];
-        HARI_LIST.forEach(hari => {
-            ['pagi', 'siang'].forEach(sesi => {
-                const s = sesi === 'pagi' ? 'Pagi' : 'Siang';
-                
-                // Get PJ
-                const pjZone = document.getElementById(`pj-${sesi}-${hari}`);
-                if(pjZone.children.length > 0) {
-                    newSchedules.push({ hari: hari, sesi: s, nama_agen: pjZone.children[0].getAttribute('data-nama'), is_pj: true });
-                }
-                
-                // Get Agents
-                const agenZone = document.getElementById(`agen-${sesi}-${hari}`);
-                Array.from(agenZone.children).forEach(card => {
-                    newSchedules.push({ hari: hari, sesi: s, nama_agen: card.getAttribute('data-nama'), is_pj: false });
-                });
-            });
+        const { isConfirmed } = await Swal.fire({
+            title: `Tambah Agen (${hari} ${sesi})`,
+            html: optionsHtml,
+            showCancelButton: true,
+            confirmButtonText: 'Simpan',
+            cancelButtonText: 'Batal'
         });
 
-        // 1. Delete all existing master schedules
-        await supabase.from('jadwal_master').delete().neq('hari', 'INVALID');
-        
-        // 2. Insert new
-        if(newSchedules.length > 0) {
-            await supabase.from('jadwal_master').insert(newSchedules);
+        if(isConfirmed) {
+            showLoader();
+            const nama = document.getElementById('swal-agen').value;
+            const isPj = document.getElementById('swal-ispj').checked;
+            
+            await supabase.from('jadwal_master').insert({ hari, sesi, nama_agen: nama, is_pj: isPj });
+            await fetchJadwalData();
+            hideLoader();
         }
-
-        btn.innerHTML = `<i class="fa-solid fa-check"></i> Tersimpan!`;
-        setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Simpan Permanen`; }, 2000);
-        Swal.fire({ icon: 'success', title: 'Tersimpan', text: 'Jadwal berhasil diperbarui di database.', timer: 2000, showConfirmButton: false });
     }
 
-
-    
-    // ==========================================
-    // DASHBOARD LOGIC
-    // ==========================================
-    async function loadDashboard() {
-        showLoader();
-        try {
-            const { count: totalAgen } = await supabase.from('agen').select('*', { count: 'exact', head: true });
-            document.getElementById('dash-total-agen').innerText = totalAgen || 0;
-
-            const { data: dendaRecords } = await supabase.from('denda').select('*');
-            let tunggakan = 0; let lunas = 0;
-            if (dendaRecords) {
-                dendaRecords.forEach(d => {
-                    if (d.status_lunas) lunas += d.nominal_denda;
-                    else tunggakan += d.nominal_denda;
-                });
-            }
-            document.getElementById('dash-denda-tunggakan').innerText = 'Rp ' + tunggakan.toLocaleString('id-ID');
-            document.getElementById('dash-denda-lunas').innerText = 'Rp ' + lunas.toLocaleString('id-ID');
-
-            const { data: absensiRecords } = await supabase.from('absensi').select('*');
-            let stats = {};
-            if (absensiRecords) {
-                absensiRecords.forEach(a => {
-                    if (!stats[a.nama_agen]) stats[a.nama_agen] = { hadir: 0, bolos: 0, telat: 0 };
-                    
-                    if (a.kehadiran === 'Hadir') {
-                        stats[a.nama_agen].hadir += 1;
-                        const dendaRecord = dendaRecords?.find(d => d.tanggal === a.tanggal && d.nama_agen === a.nama_agen);
-                        if(dendaRecord && dendaRecord.nominal_denda === APP_SETTINGS.nominal_denda_telat) {
-                            stats[a.nama_agen].telat += 1;
-                        }
-                    } else if (a.kehadiran === 'Tidak Hadir') {
-                        stats[a.nama_agen].bolos += 1;
-                    }
-                });
-            }
-
-            let arr = Object.keys(stats).map(nama => ({
-                nama, hadir: stats[nama].hadir, bolos: stats[nama].bolos, telat: stats[nama].telat, totalBuruk: stats[nama].bolos + stats[nama].telat
-            }));
-
-            // Rajin
-            arr.sort((a, b) => b.hadir - a.hadir);
-            let htmlRajin = '';
-            arr.slice(0, 5).forEach((item, index) => {
-                let badge = index === 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600';
-                let icon = index === 0 ? '<i class="fa-solid fa-crown"></i>' : `#${index+1}`;
-                htmlRajin += `
-                <div class="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full ${badge} flex items-center justify-center text-xs font-bold">${icon}</div>
-                        <span class="font-semibold text-slate-700">${item.nama}</span>
-                    </div>
-                    <span class="text-sm font-bold text-blue-600">${item.hadir} Hadir</span>
-                </div>`;
-            });
-            if(arr.length === 0) htmlRajin = '<p class="text-slate-500 text-sm text-center py-4">Belum ada data absensi.</p>';
-            document.getElementById('dash-leaderboard-rajin').innerHTML = htmlRajin;
-
-            // Malas
-            arr.sort((a, b) => b.totalBuruk - a.totalBuruk);
-            let htmlMalas = '';
-            const malasArr = arr.filter(item => item.totalBuruk > 0).slice(0, 5);
-            malasArr.forEach((item, index) => {
-                htmlMalas += `
-                <div class="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors border-l-2 border-red-400">
-                    <span class="font-semibold text-slate-700">${item.nama}</span>
-                    <div class="flex gap-2">
-                        ${item.bolos > 0 ? `<span class="text-xs px-2 py-1 bg-red-100 text-red-600 rounded font-semibold">${item.bolos} Bolos</span>` : ''}
-                        ${item.telat > 0 ? `<span class="text-xs px-2 py-1 bg-orange-100 text-orange-600 rounded font-semibold">${item.telat} Telat</span>` : ''}
-                    </div>
-                </div>`;
-            });
-            if(malasArr.length === 0) htmlMalas = '<p class="text-slate-500 text-sm text-center py-4">Semua agen disiplin! Tidak ada pelanggaran.</p>';
-            document.getElementById('dash-leaderboard-malas').innerHTML = htmlMalas;
-
-        } catch (e) { console.error(e); } finally { hideLoader(); }
+    async function hapusJadwal(id) {
+        if(confirm('Hapus agen ini dari jadwal?')) {
+            showLoader();
+            await supabase.from('jadwal_master').delete().eq('id', id);
+            await fetchJadwalData();
+            hideLoader();
+        }
     }
 
     // ==========================================
@@ -302,6 +182,41 @@
     // ==========================================
     const HARI_MAP = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     
+    
+    async function bukaModalEkstra() {
+        if(allAgents.length === 0) {
+            const { data } = await supabase.from('agen').select('*').order('nama');
+            allAgents = data || [];
+        }
+
+        let optionsHtml = '<select id="swal-ekstra-agen" class="w-full p-2 border rounded-lg mb-3">';
+        allAgents.forEach(a => {
+            optionsHtml += `<option value="${a.nama}">${a.nama}</option>`;
+        });
+        optionsHtml += '</select>';
+        
+        let sesiHtml = `
+            <select id="swal-ekstra-sesi" class="w-full p-2 border rounded-lg">
+                <option value="Pagi">Sesi Pagi</option>
+                <option value="Siang">Sesi Siang</option>
+            </select>
+        `;
+
+        const { isConfirmed } = await Swal.fire({
+            title: 'Hadirkan Agen Ekstra',
+            html: optionsHtml + sesiHtml,
+            showCancelButton: true,
+            confirmButtonText: 'Tandai Hadir',
+            cancelButtonText: 'Batal'
+        });
+
+        if(isConfirmed) {
+            const nama = document.getElementById('swal-ekstra-agen').value;
+            const sesi = document.getElementById('swal-ekstra-sesi').value;
+            await markAbsen(nama, sesi, 'Hadir', false); // Extra always normal agent
+        }
+    }
+
     async function loadAbsensiToday() {
         showLoader();
         const now = new Date();
