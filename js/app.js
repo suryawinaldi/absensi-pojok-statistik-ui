@@ -662,10 +662,27 @@ async function lunasiDenda(id) {
 }
 
 async function hapusDenda(id) {
-    if(confirm('Hapus record denda ini?')) {
+    const result = await Swal.fire({
+        title: 'Hapus Rekor Denda?',
+        text: 'Data denda ini akan dihapus secara permanen.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Hapus'
+    });
+    
+    if(result.isConfirmed) {
         showLoader();
-        await supabaseClient.from('denda').delete().eq('id', id);
-        loadDenda();
+        try {
+            await supabaseClient.from('denda').delete().eq('id', id);
+            loadDenda();
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Gagal menghapus denda', 'error');
+        } finally {
+            hideLoader();
+        }
     }
 }
 
