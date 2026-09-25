@@ -46,9 +46,16 @@
 
 
     <!-- Sidebar -->
-    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-20 hidden md:flex transition-all duration-300">
+    
+<!-- Mobile Overlay Backdrop -->
+<div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 z-40 hidden md:hidden transition-opacity opacity-0"></div>
+
+<!-- Sidebar -->
+<aside id="main-sidebar" class="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-50 fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 ease-in-out">
+
         <!-- Logo Area -->
-        <div class="h-20 flex items-center px-6 border-b border-slate-800">
+        <div class="h-20 flex items-center px-6 border-b border-slate-800 justify-between">
+            <div class="flex items-center">
             <div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center overflow-hidden mr-3">
                 <img src="data:image/jpeg;base64,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" alt="Logo Pojok Statistik" class="w-full h-full object-cover">
             </div>
@@ -56,6 +63,10 @@
                 <h1 class="text-white font-bold text-lg leading-tight">POJOK STATISTIK</h1>
                 <p class="text-xs text-slate-400">Absensi & Penjadwalan</p>
             </div>
+            </div>
+            <button onclick="toggleSidebar()" class="md:hidden text-slate-400 hover:text-white p-2">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
         </div>
 
         <!-- Profil User -->
@@ -116,10 +127,15 @@
     <!-- Main Content -->
     <main class="flex-1 flex flex-col h-screen overflow-hidden relative">
         <!-- Header -->
-        <header class="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-8 flex-shrink-0 z-10">
-            <div>
-                <h2 id="page-title" class="text-2xl font-bold text-slate-800">Absensi Harian</h2>
-                <p class="text-sm text-slate-500">Catat kehadiran agen yang bertugas hari ini.</p>
+        <header class="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-4 md:px-8 flex-shrink-0 z-10">
+            <div class="flex items-center gap-4">
+                <button onclick="toggleSidebar()" class="md:hidden p-2 text-slate-500 hover:text-slate-800 bg-slate-100 rounded-lg">
+                    <i class="fa-solid fa-bars text-xl"></i>
+                </button>
+                <div>
+                    <h2 id="page-title" class="text-xl md:text-2xl font-bold text-slate-800">Absensi Harian</h2>
+                    <p class="text-xs md:text-sm text-slate-500 hidden sm:block">Catat kehadiran agen yang bertugas hari ini.</p>
+                </div>
             </div>
             
             <div class="flex items-center space-x-6">
