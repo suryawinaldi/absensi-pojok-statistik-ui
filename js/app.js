@@ -349,7 +349,7 @@ async function tambahJadwalModal(hari, sesi) {
 }
 
 async function hapusJadwal(id) {
-    alert("Tombol tertekan! ID: " + id);
+    
     if(!id || id === 'undefined') {
         Swal.fire('Error', 'ID Jadwal tidak ditemukan atau belum diset up di database Supabase Anda. Pastikan ada kolom "id" di tabel jadwal_master.', 'error');
         return;
@@ -478,13 +478,13 @@ async function loadAbsensiToday() {
                 if(absRec) {
                     if(absRec.kehadiran === 'Hadir') {
                         statusHtml = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold"><i class="fa-solid fa-check mr-1"></i> ${absRec.waktu_hadir}</span>`;
-                        btnHtml = `<button onclick="batalkanAbsen('${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
+                        btnHtml = `<button onclick="batalkanAbsen('${absRec.id}', '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
                     } else if(absRec.kehadiran === 'Tidak Hadir') {
                         statusHtml = `<span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Tidak Hadir (Bolos)</span>`;
-                        btnHtml = `<button onclick="batalkanAbsen('${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
+                        btnHtml = `<button onclick="batalkanAbsen('${absRec.id}', '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
                     } else if(absRec.kehadiran === 'Izin') {
                         statusHtml = `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs font-semibold">Izin / Sakit</span>`;
-                        btnHtml = `<button onclick="batalkanAbsen('${absRec.id}, '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
+                        btnHtml = `<button onclick="batalkanAbsen('${absRec.id}', '${jadwal.nama_agen}', '${absRec.tanggal}')" class="px-4 py-1.5 bg-slate-200 hover:bg-red-100 hover:text-red-600 text-slate-500 rounded text-xs font-semibold border border-slate-300 transition-colors">Batalkan Absen</button>`;
                     }
                 }
 
