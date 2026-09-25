@@ -349,11 +349,31 @@ async function tambahJadwalModal(hari, sesi) {
 }
 
 async function hapusJadwal(id) {
-    if(confirm('Hapus agen ini dari jadwal?')) {
+    if(!id) {
+        Swal.fire('Error', 'ID Jadwal tidak ditemukan. Tabel di database mungkin tidak memiliki kolom id.', 'error');
+        return;
+    }
+    const result = await Swal.fire({
+        title: 'Hapus Jadwal?',
+        text: 'Agen ini akan dihapus dari sesi ini.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Hapus!'
+    });
+    
+    if (result.isConfirmed) {
         showLoader();
-        await supabaseClient.from('jadwal_master').delete().eq('id', id);
-        await fetchJadwalData();
-        hideLoader();
+        try {
+            await supabaseClient.from('jadwal_master').delete().eq('id', id);
+            await fetchJadwalData();
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Gagal menghapus', 'error');
+        } finally {
+            hideLoader();
+        }
     }
 }
 
