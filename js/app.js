@@ -129,13 +129,22 @@ async function loadDashboard() {
                         const durasiStandar = isJumat ? 120 : 150; // Jumat 2 jam, hari lain 2.5 jam
                         
                         let jamMulaiStr = '10:00';
+                        let jamSelesaiStr = null;
+                        
                         if (APP_SETTINGS && APP_SETTINGS.jadwal_harian && APP_SETTINGS.jadwal_harian[namaHari] && APP_SETTINGS.jadwal_harian[namaHari][a.sesi]) {
                             jamMulaiStr = APP_SETTINGS.jadwal_harian[namaHari][a.sesi].mulai;
+                            jamSelesaiStr = APP_SETTINGS.jadwal_harian[namaHari][a.sesi].selesai;
                         }
                         
                         const menitAbsen = parseTimeStr(a.waktu_hadir);
                         const menitMulai = parseTimeStr(jamMulaiStr);
-                        const menitSelesai = menitMulai + durasiStandar;
+                        let menitSelesai = 0;
+                        
+                        if (jamSelesaiStr) {
+                            menitSelesai = parseTimeStr(jamSelesaiStr);
+                        } else {
+                            menitSelesai = menitMulai + durasiStandar;
+                        }
                         
                         let durasiAsli = menitSelesai - menitAbsen;
                         if (durasiAsli < 0) durasiAsli = 0; // Kalo absen setelah shift bubar
@@ -839,6 +848,74 @@ async function loadAgen() {
     } catch(e) { console.error(e); } finally { hideLoader(); }
 }
 
+async function tambahAgenModal() {
+    if(allAgents.length === 0) {
+        const { data } = await supabaseClient.from('agen').select('*').order('nama');
+        allAgents = data || [];
+    }
+
+    const divisiSet = [...new Set(allAgents.map(a => a.divisi).filter(Boolean))].sort();
+    const datalistOptions = divisiSet.map(d => `<option value="${d}"></option>`).join('');
+
+    const result = await Swal.fire({
+        title: 'Tambah Agen Baru',
+        html: `
+            <div class="text-left space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama</label>
+                    <input id="swal-agen-nama" class="w-full p-2 border rounded-lg" placeholder="Nama lengkap">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Divisi</label>
+                    <input id="swal-agen-divisi" list="swal-divisi-list" class="w-full p-2 border rounded-lg" placeholder="Contoh: Media Kreatif">
+                    <datalist id="swal-divisi-list">${datalistOptions}</datalist>
+                </div>
+                <label class="flex items-center gap-2 mt-1">
+                    <input type="checkbox" id="swal-agen-bph" class="w-4 h-4">
+                    <span class="text-sm font-semibold text-slate-700">Tandai sebagai BPH</span>
+                </label>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Simpan',
+        cancelButtonText: 'Batal',
+        preConfirm: () => {
+            const nama = document.getElementById('swal-agen-nama').value.trim();
+            const divisi = document.getElementById('swal-agen-divisi').value.trim();
+            if(!nama) {
+                Swal.showValidationMessage('Nama wajib diisi');
+                return false;
+            }
+            if(!divisi) {
+                Swal.showValidationMessage('Divisi wajib diisi');
+                return false;
+            }
+            return { nama, divisi, is_bph: document.getElementById('swal-agen-bph').checked };
+        }
+    });
+
+    if(!result.isConfirmed || !result.value) return;
+    const { nama, divisi, is_bph } = result.value;
+
+    showLoader();
+    try {
+        const { error } = await supabaseClient.from('agen').insert({
+            nama,
+            divisi,
+            is_bph
+        });
+        if(error) throw error;
+        allAgents = [];
+        await loadAgen();
+        Swal.fire({ icon: 'success', title: 'Agen ditambahkan', text: nama, timer: 1500, showConfirmButton: false });
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', e.message || 'Gagal menambah agen. Cek kolom tabel agen di Supabase.', 'error');
+    } finally {
+        hideLoader();
+    }
+}
+
 
 // ==========================================
 // 8. GLOBAL SEARCH LOGIC
@@ -906,20 +983,32 @@ function loadSettingsUI() {
         const p = harian[hari]?.Pagi || { aktif: true, mulai: '10:00' };
         const s = harian[hari]?.Siang || { aktif: true, mulai: '13:30' };
         
+        // Fallback default selesai
+        const pSelesai = p.selesai ? p.selesai.substring(0,5) : (hari === 'Jumat' ? '12:00' : '12:30');
+        const sSelesai = s.selesai ? s.selesai.substring(0,5) : (hari === 'Jumat' ? '15:30' : '16:00');
+
         html += `
-        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-4">
-            <div class="w-24 font-bold text-slate-700 text-lg">${hari}</div>
+        <div class="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-start xl:flex-row xl:items-center gap-4">
+            <div class="w-full xl:w-24 font-black text-slate-800 text-lg border-b xl:border-b-0 pb-2 xl:pb-0">${hari}</div>
             
-            <div class="flex-1 bg-blue-50/50 p-2 rounded border border-blue-100 flex items-center gap-2">
-                <input type="checkbox" id="cb-pagi-${hari}" ${p.aktif ? 'checked' : ''} class="w-4 h-4">
-                <label class="text-sm font-semibold text-blue-700 w-12">PAGI</label>
-                <input type="time" id="jam-pagi-${hari}" value="${p.mulai.substring(0,5)}" class="p-1 text-sm border rounded w-full">
+            <div class="w-full flex-1 bg-blue-50/50 p-2 rounded-lg border border-blue-100 flex flex-wrap items-center gap-2">
+                <input type="checkbox" id="cb-pagi-${hari}" ${p.aktif ? 'checked' : ''} class="w-4 h-4 cursor-pointer">
+                <label class="text-sm font-black text-blue-700 w-12">PAGI</label>
+                <div class="flex items-center gap-1 flex-1">
+                    <input type="time" id="mulai-pagi-${hari}" value="${p.mulai.substring(0,5)}" class="p-1 text-xs md:text-sm border border-slate-300 rounded w-full focus:ring-1 focus:ring-blue-500">
+                    <span class="text-xs text-slate-400 font-bold px-1">-</span>
+                    <input type="time" id="selesai-pagi-${hari}" value="${pSelesai}" class="p-1 text-xs md:text-sm border border-slate-300 rounded w-full focus:ring-1 focus:ring-blue-500">
+                </div>
             </div>
             
-            <div class="flex-1 bg-orange-50/50 p-2 rounded border border-orange-100 flex items-center gap-2">
-                <input type="checkbox" id="cb-siang-${hari}" ${s.aktif ? 'checked' : ''} class="w-4 h-4">
-                <label class="text-sm font-semibold text-orange-700 w-12">SIANG</label>
-                <input type="time" id="jam-siang-${hari}" value="${s.mulai.substring(0,5)}" class="p-1 text-sm border rounded w-full">
+            <div class="w-full flex-1 bg-orange-50/50 p-2 rounded-lg border border-orange-100 flex flex-wrap items-center gap-2">
+                <input type="checkbox" id="cb-siang-${hari}" ${s.aktif ? 'checked' : ''} class="w-4 h-4 cursor-pointer">
+                <label class="text-sm font-black text-orange-700 w-12">SIANG</label>
+                <div class="flex items-center gap-1 flex-1">
+                    <input type="time" id="mulai-siang-${hari}" value="${s.mulai.substring(0,5)}" class="p-1 text-xs md:text-sm border border-slate-300 rounded w-full focus:ring-1 focus:ring-orange-500">
+                    <span class="text-xs text-slate-400 font-bold px-1">-</span>
+                    <input type="time" id="selesai-siang-${hari}" value="${sSelesai}" class="p-1 text-xs md:text-sm border border-slate-300 rounded w-full focus:ring-1 focus:ring-orange-500">
+                </div>
             </div>
         </div>
         `;
