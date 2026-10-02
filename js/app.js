@@ -69,6 +69,18 @@ function switchTab(tabId) {
     const titles = { 'dashboard': 'Dashboard Analytics', 'absensi': 'Absensi Harian', 'jadwal': 'Jadwal Master (Multi-Shift)', 'denda': 'Rekap Denda Kasir', 'agen': 'Daftar Agen Pojok Statistik', 'pengaturan': 'Pengaturan Sistem' };
     document.getElementById('page-title').innerText = titles[tabId];
 
+    // Update mobile bottom nav active state
+    document.querySelectorAll('nav.md\\:hidden button').forEach(btn => {
+        btn.classList.remove('text-blue-600');
+        btn.classList.add('text-slate-500');
+    });
+    const activeBottomBtn = document.querySelector(`nav.md\\:hidden button[onclick="switchTab('${tabId}')"]`);
+    if(activeBottomBtn) {
+        activeBottomBtn.classList.remove('text-slate-500');
+        activeBottomBtn.classList.add('text-blue-600');
+    }
+
+
     if(tabId === 'dashboard') loadDashboard();
     if(tabId === 'absensi') loadAbsensiToday();
     if(tabId === 'jadwal') loadJadwal();
@@ -193,6 +205,16 @@ async function loadDashboard() {
             }
         }
         document.getElementById('dash-leaderboard-rajin').innerHTML = lbHtml;
+        
+        // Populate Digital Certificate
+        if (arr.length > 0) {
+            const top1 = arr[0];
+            document.getElementById('cert-nama').innerText = top1.nama;
+            document.getElementById('cert-sesi').innerText = top1.hadir;
+            document.getElementById('cert-durasi').innerText = top1.menit;
+        } else {
+            document.getElementById('cert-nama').innerText = "Belum Ada";
+        }
 
         // --- CHART JS LOGIC ---
         // Sesi Chart
@@ -731,6 +753,49 @@ function toggleSidebar() {
         sidebar.classList.add('-translate-x-full');
         overlay.classList.add('opacity-0');
         setTimeout(() => overlay.classList.add('hidden'), 300);
+    }
+}
+
+
+// ==========================================
+// BULK ACTION
+// ==========================================
+async function hadirkanSemua() {
+    const tableBody = document.getElementById('absensi-table-body');
+    // Find all 'Hadir' buttons in the current table that are not hidden
+    const btnHadirList = tableBody.querySelectorAll('button.bg-blue-600, button.bg-blue-500'); // Assuming the Hadir button has blue bg
+    
+    if(btnHadirList.length === 0) {
+        Swal.fire('Info', 'Tidak ada agen yang bisa ditandai hadir di layar saat ini.', 'info');
+        return;
+    }
+    
+    const { isConfirmed } = await Swal.fire({
+        title: 'Hadirkan Semua?',
+        text: `Terdapat ${btnHadirList.length} agen yang belum absen. Tandai hadir semua secara bersamaan?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Hadirkan Semua',
+        cancelButtonText: 'Batal'
+    });
+    
+    if(isConfirmed) {
+        showLoader();
+        try {
+            // We'll simulate clicking them or call markAbsen sequentially
+            // Better to call markAbsen sequentially to reuse the logic (anti-cheat, fines, etc)
+            for (let i = 0; i < btnHadirList.length; i++) {
+                // The onclick attribute is something like "markAbsen('Dastin', 'Pagi', 'Hadir', true)"
+                // Let's just click the button programmatically
+                btnHadirList[i].click();
+                // Wait a bit to not overwhelm the DB and allow state to settle
+                await new Promise(r => setTimeout(r, 400));
+            }
+        } catch(e) {
+            console.error(e);
+        }
+        // hideLoader will be handled by the individual clicks or we can do it
+        setTimeout(() => hideLoader(), 1000);
     }
 }
 
