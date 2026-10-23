@@ -6,8 +6,9 @@ Aplikasi operasional Pojok Statistik UI. **Hanya satu akun admin yang login.** A
 
 | Rute          | Fungsi                                                                                                           |
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `/`           | Aplikasi absensi lama, tetap tersedia selama transisi                                                            |
+| `/`           | Workspace admin baru                                                                                             |
 | `/admin/`     | Workspace baru: Supabase Auth, direktori agen, jadwal bertanggal, kehadiran, kalender konten, foto/materi privat |
+| `/legacy/`    | Aplikasi absensi lama, tetap tersedia selama transisi                                                            |
 | `/prototype/` | Demo desain dengan data fiktif dan penyimpanan lokal                                                             |
 
 Workspace `/admin/` tidak menggunakan data demo. Database baru memakai tabel `ps_*`, terpisah dari tabel aplikasi lama. Login lama tidak dapat digunakan untuk masuk ke workspace baru.
@@ -21,7 +22,7 @@ npm ci
 npm run dev
 ```
 
-`npm run build` menghasilkan folder `public/`. Rute admin ada di `/admin/`. Browser mengambil SDK Supabase dari bundle lokal; tidak bergantung pada CDN untuk UI baru.
+`npm run build` menghasilkan folder `public/`. Workspace langsung tampil di `/`; `/admin/` juga tetap tersedia. Browser mengambil SDK Supabase dari bundle lokal; tidak bergantung pada CDN untuk UI baru.
 
 Build membaca URL dan **anon/publishable key** yang sudah ada di `js/supabase.js`. Untuk staging/proyek lain, set `PUBLIC_SUPABASE_URL` dan `PUBLIC_SUPABASE_ANON_KEY` di lingkungan build. Kedua nilai ini adalah konfigurasi publik, bukan kredensial admin. Build menolak JWT dengan role selain `anon` dan key `sb_secret_*`.
 
@@ -40,7 +41,7 @@ Belum dilakukan otomatis. Gunakan proyek staging terlebih dahulu untuk uji langs
 
    Tabel ini hanya mengizinkan satu akun. Mengganti admin dilakukan secara sadar oleh pemilik database; aplikasi tidak menyediakan pendaftaran atau penambahan admin.
 
-4. Buka `/admin/`, masuk dengan akun tersebut. Bila muncul pesan workspace belum diaktifkan, periksa hasil migrasi dan baris `ps_admin`.
+4. Buka `/`, masuk dengan akun tersebut. Bila muncul pesan workspace belum diaktifkan, periksa hasil migrasi dan baris `ps_admin`.
 5. Uji satu profil, foto, penugasan, absensi, dan konten di staging. Periksa bahwa sesi nonadmin dan permintaan tanpa login tidak dapat membaca `ps_*` atau bucket `pojok-media`.
 
 Lingkungan cloud saat pengembangan masih mendapat **proxy 403** untuk `jlzbdggbklnhrfixggym.supabase.co`. Akses HTTPS domain proyek Supabase harus diizinkan agar pengujian langsung dapat berjalan. Domain ini sudah diusulkan dalam draft konfigurasi lingkungan sebelumnya; menyimpan kode tidak mengaktifkan jaringan atau migrasi.
@@ -82,8 +83,8 @@ python3 prototype/tests/smoke.py --base-url http://127.0.0.1:8001
 
 ## Vercel
 
-`vercel.json` menetapkan build `npm run build` dan output `public`. Setelah perubahan dikirim ke GitHub dan Vercel selesai membangun, workspace baru akan tersedia di `/admin/`. File sumber, SQL, dan script migrasi tidak disalin ke output publik. Tahap pengembangan ini belum melakukan push GitHub atau deployment.
+`vercel.json` menetapkan build `npm run build` dan output `public`. Setelah perubahan dikirim ke GitHub dan Vercel selesai membangun, workspace baru langsung tampil di halaman utama `/` dan tetap tersedia di `/admin/`. Aplikasi lama tersedia di `/legacy/`. File sumber, SQL, dan script migrasi tidak disalin ke output publik. Status push GitHub dan deployment perlu diverifikasi terpisah dari keberhasilan build lokal.
 
 ## Tahap berikutnya
 
-Aktivasi dan pengujian Supabase staging; migrasi riwayat lama; pengaturan periode/jam operasional; laporan dan denda pada workspace baru; lalu pengalihan halaman utama setelah data dan alur disetujui. Saat ini jam operasional yang tampil masih label desain, belum menghitung denda. Fitur tersebut tetap tersedia pada aplikasi lama.
+Aktivasi dan pengujian Supabase staging; migrasi riwayat lama; pengaturan periode/jam operasional; laporan dan denda pada workspace baru. Saat ini jam operasional yang tampil masih label desain, belum menghitung denda. Fitur tersebut tetap tersedia pada aplikasi lama di `/legacy/`.

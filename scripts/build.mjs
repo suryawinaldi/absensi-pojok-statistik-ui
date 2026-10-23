@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { cp, mkdir, rm, readFile } from "node:fs/promises";
+import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -7,12 +7,24 @@ const output = path.join(root, "public");
 // Only the build-owned output directory is recreated.
 await rm(output, { recursive: true, force: true });
 await mkdir(path.join(output, "admin/assets"), { recursive: true });
+await mkdir(path.join(output, "legacy"), { recursive: true });
 for (const item of ["index.html", "js", "css"]) {
-  await cp(path.join(root, item), path.join(output, item), { recursive: true });
+  await cp(path.join(root, item), path.join(output, "legacy", item), {
+    recursive: true,
+  });
 }
 for (const item of ["index.html", "styles.css"]) {
   await cp(path.join(root, "admin", item), path.join(output, "admin", item));
 }
+// Serve the new workspace at the domain root, with stable absolute asset URLs.
+// Keep /admin/ available for links already shared during the transition.
+const adminHtml = await readFile(path.join(root, "admin/index.html"), "utf8");
+await writeFile(
+  path.join(output, "index.html"),
+  adminHtml
+    .replace('href="styles.css"', 'href="/admin/styles.css"')
+    .replace('src="assets/app.js"', 'src="/admin/assets/app.js"'),
+);
 await mkdir(path.join(output, "prototype"), { recursive: true });
 for (const item of ["index.html", "styles.css", "app.js"]) {
   await cp(
@@ -56,5 +68,5 @@ await build({
   logLevel: "info",
 });
 console.log(
-  "Static site built. Existing app: / · New admin workspace: /admin/ · Design demo: /prototype/",
+  "Static site built. Workspace: / and /admin/ · Previous app: /legacy/ · Design demo: /prototype/",
 );

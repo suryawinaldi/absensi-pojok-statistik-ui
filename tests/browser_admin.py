@@ -99,9 +99,12 @@ with sync_playwright() as p:
     backend=Backend();errors=[]
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.route(URL+'/**',backend.handle)
-    page.goto(args.base_url+'/admin/',wait_until='networkidle')
+    page.goto(args.base_url+'/',wait_until='networkidle')
     expect(page.locator('#workspace-shell')).to_be_hidden()
     expect(page.get_by_role('heading',name='Selamat datang kembali.')).to_be_visible()
+    assert page.get_by_role('link',name='Buka aplikasi absensi lama').get_attribute('href')=='/legacy/'
+    assert page.request.get(args.base_url+'/legacy/').text()==(ROOT/'index.html').read_text()
+    assert page.request.get(args.base_url+'/legacy/js/app.js').text()==(ROOT/'js/app.js').read_text()
     page.screenshot(path=str(out/'admin-login.png'),full_page=True)
     PNG=(out/'admin-login.png').read_bytes()
     login(page,'incorrect')
