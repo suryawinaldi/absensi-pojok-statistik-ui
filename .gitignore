@@ -1,0 +1,9 @@
+node_modules/
+public/
+admin/assets/app.js
+admin/assets/app.js.map
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
