@@ -1,4 +1,5 @@
 import { client, repository } from "./backend.js";
+import { loginWithUsername } from "./auth.js";
 import { emptyState, readableError } from "./repository.js";
 let authorized = false;
 let operationPending = false;
@@ -977,21 +978,14 @@ loginForm.addEventListener("submit", async (event) => {
   authError.textContent = "";
   authLoading(true, "Memeriksa akun admin…");
   try {
-    const { error } = await client.auth.signInWithPassword({
-      email: fields.get("email").trim(),
-      password: fields.get("password"),
-    });
-    if (error) {
-      authError.textContent =
-        error.status === 400
-          ? "Email atau password tidak sesuai."
-          : "Belum dapat masuk. Periksa koneksi lalu coba lagi.";
-      return;
-    }
+    await loginWithUsername(
+      client,
+      fields.get("username"),
+      fields.get("password"),
+    );
     await enterWorkspace();
-  } catch {
-    authError.textContent =
-      "Belum dapat terhubung. Periksa koneksi lalu coba lagi.";
+  } catch (error) {
+    authError.textContent = error.message || "Belum dapat masuk. Coba lagi.";
   } finally {
     loginForm.elements.password.value = "";
     authLoading(false);

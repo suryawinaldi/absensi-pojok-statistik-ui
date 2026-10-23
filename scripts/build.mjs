@@ -2,6 +2,12 @@ import { build } from "esbuild";
 import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadEnvFile } from "node:process";
+try {
+  loadEnvFile(".env.local");
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.join(root, "public");
 // Only the build-owned output directory is recreated.

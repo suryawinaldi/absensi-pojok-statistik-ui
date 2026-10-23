@@ -44,14 +44,19 @@
             Masuk untuk mengelola workspace Pojok Statistik UI.
           </p>
           <label class="form-field"
-            ><span>Email admin</span
+            ><span>Username admin</span
             ><input
               class="input"
-              name="email"
-              type="email"
+              name="username"
+              type="text"
+              minlength="3"
+              maxlength="32"
+              pattern="[A-Za-z0-9_.\-]{3,32}"
+              autocapitalize="none"
+              spellcheck="false"
               autocomplete="username"
               required
-              aria-label="Email admin" /></label
+              aria-label="Username admin" /></label
           ><label class="form-field"
             ><span>Password</span
             ><input

@@ -15,7 +15,7 @@ Workspace `/admin/` tidak menggunakan data demo. Database baru memakai tabel `ps
 
 ## Menjalankan
 
-Gunakan Node.js 22 atau lebih baru, npm, dan Python 3 untuk server pengembangan sederhana.
+Gunakan Node.js 22 atau lebih baru dan npm. `npm run dev` menjalankan server lokal yang melayani file web sekaligus API login username.
 
 ```bash
 npm ci
@@ -31,18 +31,9 @@ Build membaca URL dan **anon/publishable key** yang sudah ada di `js/supabase.js
 Belum dilakukan otomatis. Gunakan proyek staging terlebih dahulu untuk uji langsung.
 
 1. Di **Supabase → SQL Editor**, tinjau lalu jalankan [migrasi workspace](supabase/migrations/202610230001_admin_workspace.sql). Jalankan sekali; seluruh migrasi dalam transaksi. Migrasi menambah tabel dan bucket privat, tanpa mengubah tabel lama.
-2. Di **Authentication → Users**, buat satu akun admin dengan email/password melalui dashboard Supabase. Jangan memasukkan password ke kode atau chat. Nonaktifkan pendaftaran pengguna umum di pengaturan Auth.
-3. Salin UUID akun dari Auth Users, lalu daftarkan melalui SQL Editor:
-
-   ```sql
-   insert into public.ps_admin (user_id)
-   values ('UUID_AKUN_ADMIN');
-   ```
-
-   Tabel ini hanya mengizinkan satu akun. Mengganti admin dilakukan secara sadar oleh pemilik database; aplikasi tidak menyediakan pendaftaran atau penambahan admin.
-
-4. Buka `/`, masuk dengan akun tersebut. Bila muncul pesan workspace belum diaktifkan, periksa hasil migrasi dan baris `ps_admin`.
-5. Uji satu profil, foto, penugasan, absensi, dan konten di staging. Periksa bahwa sesi nonadmin dan permintaan tanpa login tidak dapat membaca `ps_*` atau bucket `pojok-media`.
+2. Ikuti [panduan membuat username dan password admin](docs/ADMIN_LOGIN.md): buat satu akun Supabase Auth, daftarkan UID di `ps_admin`, lalu set `ADMIN_USERNAME` dan `ADMIN_EMAIL` di Vercel.
+3. Redeploy Vercel setelah konfigurasi disimpan. Masuk memakai username pilihan dan password akun Auth; email tidak diketik pada form login.
+4. Uji profil, foto, penugasan, absensi, dan konten di staging. Pastikan sesi nonadmin dan permintaan tanpa login ditolak.
 
 Lingkungan cloud saat pengembangan masih mendapat **proxy 403** untuk `jlzbdggbklnhrfixggym.supabase.co`. Akses HTTPS domain proyek Supabase harus diizinkan agar pengujian langsung dapat berjalan. Domain ini sudah diusulkan dalam draft konfigurasi lingkungan sebelumnya; menyimpan kode tidak mengaktifkan jaringan atau migrasi.
 
@@ -54,6 +45,7 @@ Impor merupakan satu transaksi dan dibatasi 500 profil per permintaan. Data tida
 
 ## Perilaku data
 
+- Login username diverifikasi melalui `/api/admin-login` di server Vercel, kemudian SDK Supabase menyimpan sesi. Password tidak disimpan di source atau environment variable.
 - RLS mengizinkan hanya UUID admin terdaftar. Agen tidak dihubungkan ke `auth.users`.
 - Kehadiran dengan status Hadir wajib memiliki jam WIB. Agen/tanggal/sesi harus unik.
 - Penjadwalan konten menyimpan tanggal/jam **Asia/Jakarta**. Publikasi Instagram masih manual; status Terbit membutuhkan tautan Instagram.
@@ -83,7 +75,7 @@ python3 prototype/tests/smoke.py --base-url http://127.0.0.1:8001
 
 ## Vercel
 
-`vercel.json` menetapkan build `npm run build` dan output `public`. Setelah perubahan dikirim ke GitHub dan Vercel selesai membangun, workspace baru langsung tampil di halaman utama `/` dan tetap tersedia di `/admin/`. Aplikasi lama tersedia di `/legacy/`. File sumber, SQL, dan script migrasi tidak disalin ke output publik. Status push GitHub dan deployment perlu diverifikasi terpisah dari keberhasilan build lokal.
+`vercel.json` menetapkan build `npm run build` dan output `public`. Setelah perubahan dikirim ke GitHub dan Vercel selesai membangun, workspace baru langsung tampil di halaman utama `/` dan tetap tersedia di `/admin/`. Aplikasi lama tersedia di `/legacy/`. Endpoint `api/admin-login.js` dijalankan sebagai Vercel Function. File SQL, konfigurasi pemetaan akun, dan script migrasi tidak disalin ke output statis publik. Status push GitHub dan deployment perlu diverifikasi terpisah dari keberhasilan build lokal.
 
 ## Tahap berikutnya
 

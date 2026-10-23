@@ -31,8 +31,18 @@ class Backend:
             'ps_shifts': [], 'ps_posts': []}
     def token(self):
         enc = lambda v: base64.urlsafe_b64encode(json.dumps(v).encode()).decode().rstrip('=')
-        jwt = enc({'alg':'HS256'})+'.'+enc({'sub':ADMIN,'exp':int(time.time())+3600,'aud':'authenticated','role':'authenticated'})+'.fixture-signature'
+        jwt = enc({'alg':'HS256'})+'.'+enc({'sub':ADMIN,'exp':int(time.time())+3600,'aud':'authenticated','role':'authenticated'})+'.'+base64.urlsafe_b64encode(b'fixture-signature').decode().rstrip('=')
         return {'access_token':jwt,'refresh_token':'fixture-refresh','token_type':'bearer','expires_in':3600,'expires_at':int(time.time())+3600,'user':self.user}
+    def login_handle(self,route):
+        payload=route.request.post_data_json
+        assert 'email' not in payload
+        if payload.get('username')!='adminpojokui' or payload.get('password')=='incorrect':
+            route.fulfill(status=401,content_type='application/json',body=json.dumps({'error':'Username atau password tidak sesuai.'}))
+        elif not self.allowed:
+            route.fulfill(status=403,content_type='application/json',body=json.dumps({'error':'Akun ini belum terdaftar sebagai admin workspace.'}))
+        else:
+            token=self.token()
+            route.fulfill(status=200,content_type='application/json',body=json.dumps({'access_token':token['access_token'],'refresh_token':token['refresh_token']}))
     def handle(self,route):
         req=route.request
         u=urlparse(req.url)
@@ -83,7 +93,7 @@ class Backend:
         else:raise AssertionError('Unexpected request: '+method+' '+path)
 
 def login(page,password='fixture-password'):
-    page.get_by_label('Email admin').fill('admin@example.test')
+    page.get_by_label('Username admin').fill('adminpojokui')
     page.get_by_label('Password',exact=True).fill(password)
     page.get_by_role('button',name='Masuk ke workspace').click()
 
@@ -99,6 +109,7 @@ with sync_playwright() as p:
     backend=Backend();errors=[]
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.route(URL+'/**',backend.handle)
+    page.route(args.base_url+'/api/admin-login',backend.login_handle)
     page.goto(args.base_url+'/',wait_until='networkidle')
     expect(page.locator('#workspace-shell')).to_be_hidden()
     expect(page.get_by_role('heading',name='Selamat datang kembali.')).to_be_visible()
@@ -108,7 +119,7 @@ with sync_playwright() as p:
     page.screenshot(path=str(out/'admin-login.png'),full_page=True)
     PNG=(out/'admin-login.png').read_bytes()
     login(page,'incorrect')
-    expect(page.locator('#auth-error')).to_contain_text('Email atau password tidak sesuai')
+    expect(page.locator('#auth-error')).to_contain_text('Username atau password tidak sesuai')
     login(page)
     expect(page.get_by_role('heading',name='Selamat datang, Admin.')).to_be_visible()
     assert 'Nadia' not in page.locator('#main').inner_text(), 'Demo records leaked into production UI'
@@ -184,7 +195,9 @@ with sync_playwright() as p:
     page.reload(wait_until='networkidle')
     expect(page.locator('#workspace-shell')).to_be_hidden()
     mobile=browser.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
-    mobile.route(URL+'/**',Backend().handle)
+    mobile_backend=Backend()
+    mobile.route(URL+'/**',mobile_backend.handle)
+    mobile.route(args.base_url+'/api/admin-login',mobile_backend.login_handle)
     mobile.goto(args.base_url+'/admin/',wait_until='networkidle')
     assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
     mobile.screenshot(path=str(out/'admin-login-mobile.png'),full_page=True)
