@@ -1,6 +1,12 @@
 import { client, repository } from "./backend.js";
 import { loginWithUsername } from "./auth.js";
-import { emptyState, readableError } from "./repository.js";
+import {
+  emptyState,
+  readableError,
+  SETTINGS_ID,
+  WORKDAYS,
+  defaultOperationalHours,
+} from "./repository.js";
 let authorized = false;
 let operationPending = false;
 let sessionEpoch = 0;
@@ -65,6 +71,37 @@ const offsetDate = (base, offset) => {
   d.setDate(d.getDate() + offset);
   return dateKey(d);
 };
+const nowJakartaTime = () =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+
+const DAY_NAMES = [
+  "Minggu",
+  "Senin",
+  "Selasa",
+  "Rabu",
+  "Kamis",
+  "Jumat",
+  "Sabtu",
+];
+const getDayName = (dateStr) =>
+  DAY_NAMES[new Date(`${dateStr}T12:00:00+07:00`).getDay()] || "Senin";
+
+const parseMinutes = (timeStr) => {
+  if (!timeStr || typeof timeStr !== "string" || !timeStr.includes(":"))
+    return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+};
+
+const formatRupiah = (amount) =>
+  `Rp ${Number(amount || 0).toLocaleString("id-ID")}`;
+
 const statuses = [
   "Ide",
   "Dikerjakan",
@@ -76,6 +113,7 @@ const statuses = [
 const divisions = ["Pengurus Inti", "Media Kreatif", "Analisis & Pelayanan"];
 let state = emptyState();
 let legacyAgentPreview = [];
+let legacySchedulePreview = [];
 let page = "beranda",
   agentSearch = "",
   divisionFilter = "",
@@ -85,13 +123,181 @@ let page = "beranda",
     ? "list"
     : "calendar",
   attendanceDate = TODAY,
-  attendanceSession = "";
+  attendanceSession = "",
+  attendanceTab = "harian",
+  analyticsScope = "all",
+  fineStatusFilter = "",
+  fineSearch = "",
+  draggedWeeklyId = "";
 let toastTimer, lastFocused;
 const dialog = document.querySelector("#detail-dialog");
 const main = document.querySelector("#main");
 const findAgent = (agentId) => state.agents.find((a) => a.id === agentId);
 const agentName = (agentId) => findAgent(agentId)?.name || "Belum ditentukan";
 const validImage = repository.isSafeMedia;
+
+function activeSettings() {
+  const saved = state.settings?.[0];
+  const baseHours = defaultOperationalHours();
+  if (!saved) {
+    return {
+      id: SETTINGS_ID,
+      lateToleranceMinutes: 15,
+      lateFineAmount: 5000,
+      absentFineAmount: 10000,
+      operationalHours: baseHours,
+    };
+  }
+  const mergedHours = {};
+  for (const day of WORKDAYS) {
+    mergedHours[day] = {
+      Pagi: {
+        ...baseHours[day].Pagi,
+        ...(saved.operationalHours?.[day]?.Pagi || {}),
+      },
+      Siang: {
+        ...baseHours[day].Siang,
+        ...(saved.operationalHours?.[day]?.Siang || {}),
+      },
+    };
+  }
+  return {
+    ...saved,
+    operationalHours: mergedHours,
+  };
+}
+
+function getSessionConfig(dateStr, session) {
+  const dayName = getDayName(dateStr);
+  const cfg = activeSettings().operationalHours[dayName]?.[session];
+  if (cfg) return cfg;
+  const isFri = dayName === "Jumat";
+  return session === "Pagi"
+    ? { active: true, start: "10:00", end: isFri ? "11:30" : "12:30" }
+    : { active: true, start: "13:30", end: isFri ? "15:30" : "16:00" };
+}
+
+function calcShiftDuration(shift) {
+  if (shift.status !== "Hadir" || !shift.time) return 0;
+  const cfg = getSessionConfig(shift.date, shift.session);
+  const arrival = parseMinutes(shift.time);
+  const end = parseMinutes(cfg.end);
+  if (arrival === null || end === null) return 0;
+  return Math.max(0, end - arrival);
+}
+
+function calcShiftFine(shift) {
+  if (shift.extra || shift.pj) {
+    return { amount: 0, reason: "", exempt: true };
+  }
+  const settings = activeSettings();
+  if (shift.status === "Tidak hadir") {
+    return {
+      amount: settings.absentFineAmount,
+      reason: "Tidak hadir (Bolos)",
+      exempt: false,
+    };
+  }
+  if (shift.status === "Hadir" && shift.time) {
+    const cfg = getSessionConfig(shift.date, shift.session);
+    const startMin = parseMinutes(cfg.start);
+    const arrivalMin = parseMinutes(shift.time);
+    if (
+      startMin !== null &&
+      arrivalMin !== null &&
+      arrivalMin > startMin + settings.lateToleranceMinutes
+    ) {
+      const lateMin = arrivalMin - startMin;
+      return {
+        amount: settings.lateFineAmount,
+        reason: `Terlambat ${lateMin} mnt (${shift.time})`,
+        exempt: false,
+      };
+    }
+  }
+  return { amount: 0, reason: "", exempt: false };
+}
+
+function effectiveShiftsForDate(dateStr, sessionFilter = "") {
+  const dayName = getDayName(dateStr);
+  const settings = activeSettings();
+  const recorded = state.shifts.filter(
+    (s) => s.date === dateStr && (!sessionFilter || s.session === sessionFilter),
+  );
+  const masterForDay = (state.weeklySchedule || []).filter((w) => {
+    if (w.day !== dayName) return false;
+    if (sessionFilter && w.session !== sessionFilter) return false;
+    const sessCfg = settings.operationalHours[dayName]?.[w.session];
+    if (sessCfg && sessCfg.active === false) return false;
+    return true;
+  });
+
+  const combined = [...recorded];
+  for (const w of masterForDay) {
+    const exists = combined.some(
+      (s) => s.agent === w.agent && s.session === w.session,
+    );
+    if (!exists) {
+      combined.push({
+        id: `master:${w.id}:${dateStr}`,
+        _masterId: w.id,
+        fromMaster: true,
+        agent: w.agent,
+        date: dateStr,
+        session: w.session,
+        pj: Boolean(w.pj),
+        extra: false,
+        finePaid: false,
+        status: "Belum dicatat",
+        time: "",
+      });
+    }
+  }
+  return combined.sort((a, b) => {
+    if (a.session !== b.session) return a.session === "Pagi" ? -1 : 1;
+    if (Boolean(a.pj) !== Boolean(b.pj)) return a.pj ? -1 : 1;
+    if (Boolean(a.extra) !== Boolean(b.extra)) return a.extra ? 1 : -1;
+    return agentName(a.agent).localeCompare(agentName(b.agent), "id");
+  });
+}
+
+function computeAgentStats(scope = "all") {
+  const map = new Map();
+  for (const a of state.agents) {
+    map.set(a.id, {
+      agent: a,
+      totalSessions: 0,
+      regularSessions: 0,
+      extraSessions: 0,
+      totalMinutes: 0,
+      finesTotal: 0,
+      finesUnpaid: 0,
+    });
+  }
+  for (const s of state.shifts) {
+    if (scope === "month" && !s.date.startsWith(BASE)) continue;
+    let entry = map.get(s.agent);
+    if (!entry) continue;
+    if (s.status === "Hadir") {
+      entry.totalSessions += 1;
+      if (s.extra) entry.extraSessions += 1;
+      else entry.regularSessions += 1;
+      entry.totalMinutes += calcShiftDuration(s);
+    }
+    const fine = calcShiftFine(s);
+    if (fine.amount > 0) {
+      entry.finesTotal += fine.amount;
+      if (!s.finePaid) entry.finesUnpaid += fine.amount;
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) =>
+      b.totalSessions - a.totalSessions ||
+      b.totalMinutes - a.totalMinutes ||
+      a.agent.name.localeCompare(b.agent.name, "id"),
+  );
+}
+
 function avatar(agent, large = "") {
   if (!agent) return "";
   const n = state.agents.indexOf(agent) % 4;
@@ -102,14 +308,18 @@ function badge(status) {
     {
       Hadir: "green",
       Aktif: "green",
+      Lunas: "green",
       Terbit: "green",
       Disetujui: "green",
+      "Agen Ekstra": "green",
       Dijadwalkan: "blue",
+      "PJ sesi": "blue",
       Review: "amber",
       Izin: "amber",
       Sakit: "amber",
       Dikerjakan: "purple",
       "Tidak hadir": "red",
+      "Belum lunas": "red",
     }[status] || "";
   return `<span class="status ${color}">${esc(status)}</span>`;
 }
@@ -151,6 +361,52 @@ async function update(mutator, message) {
       : "Belum masuk";
   }
 }
+async function updateMany(mutators, message) {
+  if (!authorized || operationPending || !mutators.length) return false;
+  const epoch = sessionEpoch;
+  operationPending = true;
+  document.body.classList.add("saving");
+  document.querySelector("#connection-status").textContent = "Menyimpan…";
+  try {
+    let current = state;
+    for (const mutator of mutators) {
+      const next = structuredClone(current);
+      mutator(next);
+      current = await repository.commit(current, next);
+      if (epoch !== sessionEpoch || !authorized) return false;
+      state = current;
+    }
+    toast(message || "Perubahan tersimpan.");
+    return true;
+  } catch (error) {
+    if (epoch === sessionEpoch && authorized) toast(readableError(error));
+    return false;
+  } finally {
+    operationPending = false;
+    document.body.classList.remove("saving");
+    document.querySelector("#connection-status").textContent = authorized
+      ? "Terhubung"
+      : "Belum masuk";
+  }
+}
+
+function downloadCsv(filename, headers, rows) {
+  const escapeCsv = (val) => {
+    const str = String(val ?? "");
+    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+  const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCsv).join(","))].join(
+    "\n",
+  );
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function header(eyebrow, title, description, actions = "") {
   return `<div class="page-heading"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="subtitle">${description}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
@@ -189,8 +445,9 @@ function render() {
   if (page === "kehadiran") renderAttendance();
   if (page === "konten") renderContent();
 }
+
 function renderHome() {
-  const shifts = state.shifts.filter((s) => s.date === TODAY),
+  const shifts = effectiveShiftsForDate(TODAY),
     present = shifts.filter((s) => s.status === "Hadir").length,
     pending = shifts.filter((s) => s.status === "Belum dicatat").length,
     review = state.posts.filter((p) => p.status === "Review");
@@ -198,6 +455,32 @@ function renderHome() {
     .filter((p) => p.status !== "Terbit")
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
     .slice(0, 3);
+
+  const stats = computeAgentStats(analyticsScope);
+  const activeStats = stats.filter(
+    (s) => s.totalSessions > 0 || s.totalMinutes > 0,
+  );
+  const starAgent = activeStats[0] || null;
+  const top5Agents = stats.slice(0, 5);
+  const top10BySessions = [...stats]
+    .sort((a, b) => b.totalSessions - a.totalSessions || b.totalMinutes - a.totalMinutes)
+    .slice(0, 10);
+  const top10ByMinutes = [...stats]
+    .sort((a, b) => b.totalMinutes - a.totalMinutes || b.totalSessions - a.totalSessions)
+    .slice(0, 10);
+  const maxSessions = Math.max(1, ...top10BySessions.map((x) => x.totalSessions));
+  const maxMinutes = Math.max(1, ...top10ByMinutes.map((x) => x.totalMinutes));
+
+  let unpaidFinesTotal = 0;
+  let paidFinesTotal = 0;
+  for (const s of state.shifts) {
+    const f = calcShiftFine(s);
+    if (f.amount > 0) {
+      if (s.finePaid) paidFinesTotal += f.amount;
+      else unpaidFinesTotal += f.amount;
+    }
+  }
+
   main.innerHTML =
     header(
       "RUANG KERJA POJOK STATISTIK",
@@ -207,18 +490,188 @@ function renderHome() {
     ) +
     `<section class="hero" aria-label="Ringkasan hari ini"><div class="hero-copy"><p class="eyebrow">${formatDate(TODAY, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p><h2>Kontribusi kecil.<br>Dampak yang berarti.</h2><p>Ada ${shifts.length} penugasan jaga dan ${state.posts.filter((p) => p.date === TODAY).length} agenda publikasi hari ini. Mari pastikan semuanya berjalan baik.</p><a href="#kehadiran" class="text-button hero-link">Kelola aktivitas hari ini ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><span class="art-star">✳</span><div class="art-bar"></div><div class="art-bar"></div><div class="art-bar"></div></div></section>` +
     `<section class="metrics" aria-label="Ringkasan operasional">${metric("Agen aktif", state.agents.filter((a) => a.active).length, "agen", "Dalam periode kepengurusan ini", "users")}${metric("Kehadiran hari ini", present, `/ ${shifts.length}`, `${pending} penugasan belum dicatat`, "check")}${metric("Menunggu review", review.length, "konten", "Perlu pemeriksaan admin", "review")}${metric("Publikasi bulan ini", state.posts.filter((p) => p.status === "Terbit" && p.date.startsWith(BASE)).length, "konten", monthLabel(BASE), "content")}</section>` +
-    `<div class="dashboard-grid"><div class="panel"><div class="panel-header"><div><h2 class="panel-title">Jadwal jaga hari ini</h2><p class="panel-description">${formatDate(TODAY, { weekday: "long", day: "numeric", month: "long" })} · Semua sesi</p></div><a class="text-button" href="#kehadiran">Lihat semua ${icon("arrow")}</a></div><div class="table-scroll"><table><thead><tr><th>AGEN</th><th>SESI</th><th>STATUS</th></tr></thead><tbody>${shifts.length ? shifts.map((s) => `<tr><td>${person(s.agent)}</td><td>${s.session}<br><small class="muted">${s.pj ? "Penanggung jawab" : "Anggota"}</small></td><td>${badge(s.status)}</td></tr>`).join("") : '<tr><td colspan="3">Belum ada penugasan hari ini.</td></tr>'}</tbody></table></div><div class="panel-foot">${icon("info")}Kehadiran dicatat dan dikelola oleh admin.</div></div>
- <div class="stack"><section class="panel"><div class="panel-header"><h2 class="panel-title">Perlu ditindaklanjuti</h2><span class="pill-count">${Number(review.length > 0) + Number(pending > 0)}</span></div><div class="task-list">${review.length ? `<button class="task-row" data-action="review-filter"><span class="task-icon">${icon("review")}</span><span><strong>${review.length} konten menunggu review</strong><small>Periksa materi sebelum publikasi</small></span>${icon("right")}</button>` : ""}${pending ? `<a class="task-row" href="#kehadiran"><span class="task-icon blue">${icon("clock")}</span><span><strong>${pending} kehadiran belum dicatat</strong><small>Lengkapi catatan penugasan hari ini</small></span>${icon("right")}</a>` : ""}${!pending && !review.length ? '<p class="help">Semua tindak lanjut sudah selesai.</p>' : ""}</div></section><section class="panel"><div class="panel-header"><h2 class="panel-title">Agenda publikasi</h2><a href="#konten" class="text-button">Kalender ${icon("arrow")}</a></div><div class="upcoming">${upcoming.map(upcomingRow).join("") || '<p class="help">Belum ada agenda publikasi.</p>'}</div></section></div></div>`;
+    `<div class="dashboard-grid"><div class="panel"><div class="panel-header"><div><h2 class="panel-title">Jadwal jaga hari ini</h2><p class="panel-description">${formatDate(TODAY, { weekday: "long", day: "numeric", month: "long" })} · Otomatis dari Jadwal Master & penugasan</p></div><a class="text-button" href="#kehadiran">Lihat semua ${icon("arrow")}</a></div><div class="table-scroll"><table><thead><tr><th>AGEN</th><th>SESI</th><th>STATUS</th></tr></thead><tbody>${
+      shifts.length
+        ? shifts
+            .map(
+              (s) =>
+                `<tr><td>${person(s.agent)}</td><td>${s.session}<br><small class="muted">${s.extra ? "Agen ekstra (sukarelawan)" : s.pj ? "Penanggung jawab" : "Anggota"}</small></td><td>${badge(s.status)}${s.time ? `<br><small class="muted">${esc(s.time)} WIB · ${calcShiftDuration(s)} mnt</small>` : ""}</td></tr>`,
+            )
+            .join("")
+        : '<tr><td colspan="3">Belum ada penugasan hari ini.</td></tr>'
+    }</tbody></table></div><div class="panel-foot">${icon("info")}Kehadiran dicatat dan dikelola oleh admin.</div></div>
+ <div class="stack"><section class="panel"><div class="panel-header"><h2 class="panel-title">Perlu ditindaklanjuti</h2><span class="pill-count">${Number(review.length > 0) + Number(pending > 0) + Number(unpaidFinesTotal > 0)}</span></div><div class="task-list">${review.length ? `<button class="task-row" data-action="review-filter"><span class="task-icon">${icon("review")}</span><span><strong>${review.length} konten menunggu review</strong><small>Periksa materi sebelum publikasi</small></span>${icon("right")}</button>` : ""}${pending ? `<a class="task-row" href="#kehadiran"><span class="task-icon blue">${icon("clock")}</span><span><strong>${pending} kehadiran belum dicatat</strong><small>Lengkapi catatan penugasan hari ini</small></span>${icon("right")}</a>` : ""}${unpaidFinesTotal > 0 ? `<button class="task-row" data-action="open-fines-tab"><span class="task-icon">${icon("info")}</span><span><strong>${formatRupiah(unpaidFinesTotal)} denda belum lunas</strong><small>Terkumpul lunas: ${formatRupiah(paidFinesTotal)}</small></span>${icon("right")}</button>` : ""}${!pending && !review.length && !unpaidFinesTotal ? '<p class="help">Semua tindak lanjut sudah selesai.</p>' : ""}</div></section><section class="panel"><div class="panel-header"><h2 class="panel-title">Agenda publikasi</h2><a href="#konten" class="text-button">Kalender ${icon("arrow")}</a></div><div class="upcoming">${upcoming.map(upcomingRow).join("") || '<p class="help">Belum ada agenda publikasi.</p>'}</div></section></div></div>` +
+    `<section class="analytics-section" aria-label="Analitik keaktifan dan durasi jaga">
+      <div class="toolbar" style="margin-top:28px">
+        <div>
+          <p class="eyebrow">ANALITIK KEHADIRAN & APRESIASI</p>
+          <h2 class="section-heading">Keaktifan sesi & durasi jaga agen</h2>
+        </div>
+        <div class="view-toggle" aria-label="Periode analitik">
+          <button data-action="analytics-scope" data-scope="all" class="${analyticsScope === "all" ? "active" : ""}">Semua waktu</button>
+          <button data-action="analytics-scope" data-scope="month" class="${analyticsScope === "month" ? "active" : ""}">Bulan ini (${monthLabel(BASE)})</button>
+        </div>
+      </div>
+
+      <div class="dashboard-grid" style="margin-top:14px">
+        <div class="panel star-agent-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow" style="color:#9a6700">🌟 STAR AGENT OF THE MONTH</p>
+              <h2 class="panel-title">Apresiasi dedikasi tertinggi</h2>
+            </div>
+            ${starAgent ? `<button class="button" data-action="show-certificate" data-id="${esc(starAgent.agent.id)}">${icon("spark")}Sertifikat digital</button>` : ""}
+          </div>
+          ${
+            starAgent
+              ? `<div class="star-agent-body">
+                  <div class="person">${avatar(starAgent.agent, "large")}<span><strong>${esc(starAgent.agent.name)}</strong><small>${esc(starAgent.agent.position)} · ${esc(starAgent.agent.division)}</small></span></div>
+                  <div class="star-metrics">
+                    <div><span>Total jaga</span><strong>${starAgent.totalSessions} sesi</strong><small>${starAgent.regularSessions} reguler · ${starAgent.extraSessions} ekstra</small></div>
+                    <div><span>Total durasi</span><strong>${starAgent.totalMinutes} menit</strong><small>${(starAgent.totalMinutes / 60).toFixed(1)} jam kontribusi</small></div>
+                  </div>
+                </div>`
+              : `<div class="empty">Belum ada data kehadiran tercatat pada periode ini.</div>`
+          }
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Top 5 agen terajin (termasuk ekstra)</h2>
+              <p class="panel-description">Diurutkan dari total sesi hadir & akumulasi menit jaga</p>
+            </div>
+          </div>
+          <div class="leaderboard-list">
+            ${
+              top5Agents.length && top5Agents.some((x) => x.totalSessions > 0)
+                ? top5Agents
+                    .filter((x) => x.totalSessions > 0)
+                    .map(
+                      (item, idx) =>
+                        `<div class="leaderboard-row">
+                          <span class="rank-badge rank-${idx + 1}">#${idx + 1}</span>
+                          ${person(item.agent.id)}
+                          <div class="leaderboard-stats">
+                            <strong>${item.totalSessions} sesi</strong>
+                            <small>${item.totalMinutes} mnt${item.extraSessions ? ` · +${item.extraSessions} ekstra` : ""}</small>
+                          </div>
+                        </div>`,
+                    )
+                    .join("")
+                : '<p class="help" style="padding:18px">Data peringkat akan tampil setelah kehadiran agen dicatat.</p>'
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid" style="margin-top:18px">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Top 10 frekuensi jaga (total sesi)</h2>
+              <p class="panel-description">Akumulasi sesi reguler dan sesi sukarelawan (ekstra)</p>
+            </div>
+            ${icon("trend")}
+          </div>
+          <div class="chart-bars">
+            ${
+              top10BySessions.length
+                ? top10BySessions
+                    .map(
+                      (item) =>
+                        `<div class="bar-row">
+                          <div class="bar-label"><strong>${esc(item.agent.name)}</strong><span>${item.totalSessions} sesi ${item.extraSessions ? `(${item.extraSessions} ekstra)` : ""}</span></div>
+                          <div class="bar-track"><span class="bar-fill" style="width:${Math.max(4, Math.round((item.totalSessions / maxSessions) * 100))}%"></span></div>
+                        </div>`,
+                    )
+                    .join("")
+                : '<p class="help">Belum ada agen terdaftar.</p>'
+            }
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Top 10 durasi jaga (dalam menit)</h2>
+              <p class="panel-description">Selisih menit dari jam hadir aktual hingga jam tutup sesi</p>
+            </div>
+            ${icon("clock")}
+          </div>
+          <div class="chart-bars">
+            ${
+              top10ByMinutes.length
+                ? top10ByMinutes
+                    .map(
+                      (item) =>
+                        `<div class="bar-row">
+                          <div class="bar-label"><strong>${esc(item.agent.name)}</strong><span>${item.totalMinutes} menit</span></div>
+                          <div class="bar-track"><span class="bar-fill teal" style="width:${Math.max(4, Math.round((item.totalMinutes / maxMinutes) * 100))}%"></span></div>
+                        </div>`,
+                    )
+                    .join("")
+                : '<p class="help">Belum ada agen terdaftar.</p>'
+            }
+          </div>
+        </div>
+      </div>
+    </section>`;
 }
+
+function showCertificate(agentId) {
+  const stats = computeAgentStats(analyticsScope);
+  const entry = stats.find((s) => s.agent.id === agentId) || stats[0];
+  if (!entry) return;
+  const periodText =
+    analyticsScope === "month" ? monthLabel(BASE) : "Periode 2026 / 2027";
+  openDialog(
+    "Sertifikat Apresiasi Digital",
+    "PENGHARGAAN POJOK STATISTIK UI",
+    `<div class="certificate-card">
+      <p class="eyebrow">POJOK STATISTIK · UNIVERSITAS INDONESIA</p>
+      <h3>STAR AGENT OF THE MONTH</h3>
+      <p class="help">Diberikan sebagai bentuk apresiasi atas dedikasi dan kontribusi terbaik kepada:</p>
+      <div class="certificate-recipient">
+        ${avatar(entry.agent, "large")}
+        <h2>${esc(entry.agent.name)}</h2>
+        <p>${esc(entry.agent.position)} · ${esc(entry.agent.division)}</p>
+      </div>
+      <div class="certificate-stats">
+        <div><span>Total Kehadiran</span><strong>${entry.totalSessions} Sesi</strong></div>
+        <div><span>Sesi Sukarelawan (Ekstra)</span><strong>${entry.extraSessions} Sesi</strong></div>
+        <div><span>Total Durasi Jaga</span><strong>${entry.totalMinutes} Menit</strong></div>
+      </div>
+      <p class="certificate-period">${esc(periodText)}</p>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="button" data-action="close">Tutup</button>
+      <button type="button" class="button primary" data-action="print-certificate">Cetak / Simpan PDF</button>
+    </div>`,
+  );
+}
+
 function agentCards() {
   const q = agentSearch.toLocaleLowerCase("id");
-  return state.agents.filter(
-    (a) =>
-      (!divisionFilter || a.division === divisionFilter) &&
-      `${a.name} ${a.position} ${a.division}`
-        .toLocaleLowerCase("id")
-        .includes(q),
-  );
+  const divisionRank = (div) => {
+    if (div === "Pengurus Inti") return 0;
+    if (div === "Analisis & Pelayanan") return 1;
+    if (div === "Media Kreatif") return 2;
+    return 3;
+  };
+  return state.agents
+    .filter(
+      (a) =>
+        (!divisionFilter || a.division === divisionFilter) &&
+        `${a.name} ${a.position} ${a.division}`
+          .toLocaleLowerCase("id")
+          .includes(q),
+    )
+    .sort(
+      (a, b) =>
+        divisionRank(a.division) - divisionRank(b.division) ||
+        a.name.localeCompare(b.name, "id"),
+    );
 }
 function renderAgents() {
   main.innerHTML =
@@ -237,44 +690,312 @@ function renderAgentCards() {
     `${list.length} dari ${state.agents.length} agen`;
   document.querySelector("#agent-grid").innerHTML =
     list
-      .map(
-        (a) =>
-          `<button class="agent-card" data-action="agent" data-id="${esc(a.id)}"><span class="agent-card-top">${avatar(a)}${badge(a.active ? "Aktif" : "Nonaktif")}</span><h2>${esc(a.name)}</h2><p>${esc(a.position)}</p><span class="division-label">${esc(a.division)}</span><span class="agent-card-bottom"><span>${state.shifts.filter((s) => s.agent === a.id && s.date >= TODAY).length} penugasan mendatang</span>${icon("arrow")}</span></button>`,
-      )
+      .map((a) => {
+        const weeklyCount = (state.weeklySchedule || []).filter(
+          (w) => w.agent === a.id,
+        ).length;
+        const attendedCount = state.shifts.filter(
+          (s) => s.agent === a.id && s.status === "Hadir",
+        ).length;
+        return `<button class="agent-card ${a.division === "Pengurus Inti" ? "pi-card" : ""}" data-action="agent" data-id="${esc(a.id)}"><span class="agent-card-top">${avatar(a)}${badge(a.active ? "Aktif" : "Nonaktif")}</span><h2>${esc(a.name)}</h2><p>${esc(a.position)}</p><span class="division-label ${a.division === "Pengurus Inti" ? "pi-badge" : ""}">${esc(a.division)}</span><span class="agent-card-bottom"><span>${weeklyCount ? `${weeklyCount} jadwal rutin · ` : ""}${attendedCount} sesi hadir</span>${icon("arrow")}</span></button>`;
+      })
       .join("") ||
     '<div class="empty">Tidak ada agen yang sesuai. Coba nama atau divisi lain.</div>';
 }
+
 function renderAttendance() {
-  const shifts = state.shifts.filter(
-    (s) =>
-      s.date === attendanceDate &&
-      (!attendanceSession || s.session === attendanceSession),
-  );
+  const topActions =
+    attendanceTab === "harian"
+      ? `<button class="button" data-action="new-extra-shift">${icon("plus")}Agen ekstra</button><button class="button" data-action="mark-all-present">${icon("check")}Hadirkan semua</button><button class="button primary" data-action="new-shift">${icon("plus")}Tambah penugasan</button>`
+      : attendanceTab === "master"
+        ? `<button class="button" data-action="import-legacy-schedule">Impor jadwal lama</button><button class="button primary" data-action="add-weekly" data-day="Senin" data-session="Pagi">${icon("plus")}Tambah ke jadwal master</button>`
+        : attendanceTab === "denda"
+          ? `<button class="button" data-action="export-fines-csv">Export CSV Denda</button>`
+          : "";
+
+  const subTabs = `<div class="toolbar operational-toolbar">
+    <div class="view-toggle operational-tabs" aria-label="Mode operasional jadwal dan kehadiran">
+      <button data-action="attendance-tab" data-tab="harian" class="${attendanceTab === "harian" ? "active" : ""}">Absensi Harian</button>
+      <button data-action="attendance-tab" data-tab="master" class="${attendanceTab === "master" ? "active" : ""}">Jadwal Master (Mingguan)</button>
+      <button data-action="attendance-tab" data-tab="pengaturan" class="${attendanceTab === "pengaturan" ? "active" : ""}">Jam Buka & Tutup</button>
+      <button data-action="attendance-tab" data-tab="denda" class="${attendanceTab === "denda" ? "active" : ""}">Rekap Denda</button>
+    </div>
+  </div>`;
+
+  let bodyHtml = "";
+  if (attendanceTab === "harian") bodyHtml = renderDailyAttendanceView();
+  else if (attendanceTab === "master") bodyHtml = renderMasterScheduleView();
+  else if (attendanceTab === "pengaturan") bodyHtml = renderSettingsView();
+  else if (attendanceTab === "denda") bodyHtml = renderFinesView();
+
   main.innerHTML =
     header(
       "OPERASIONAL TIM",
       "Jadwal & kehadiran",
-      "Atur penugasan bertanggal dan catat kehadiran setiap agen.",
-      `<button class="button primary" data-action="new-shift">${icon("plus")}Tambah penugasan</button>`,
+      "Atur jadwal master per hari & sesi, jam buka-tutup fleksibel, agen ekstra, dan catat kehadiran.",
+      topActions,
     ) +
-    `<div class="toolbar"><div class="attendance-date"><button class="icon-button" data-action="prev-day" aria-label="Hari sebelumnya">${icon("left")}</button><input class="input" id="attendance-date" type="date" aria-label="Tanggal kehadiran" value="${attendanceDate}" required><button class="icon-button" data-action="next-day" aria-label="Hari berikutnya">${icon("right")}</button><button class="button" data-action="today-attendance">Hari ini</button></div><select id="session-filter" aria-label="Filter sesi"><option value="">Semua sesi</option>${["Pagi", "Siang"].map((s) => `<option ${attendanceSession === s ? "selected" : ""}>${s}</option>`).join("")}</select></div><div class="banner">${icon("info")}Pencatatan dilakukan oleh admin. Agen tidak memiliki akun login.</div><section class="metrics">${metric("Terjadwal", shifts.length, "agen", "Pada tanggal dan sesi terpilih", "users")}${metric("Hadir", shifts.filter((s) => s.status === "Hadir").length, "agen", "Kehadiran sudah dicatat", "check")}${metric("Izin / sakit", shifts.filter((s) => ["Izin", "Sakit"].includes(s.status)).length, "agen", "Sesuai catatan admin", "mail")}${metric("Belum dicatat", shifts.filter((s) => s.status === "Belum dicatat").length, "agen", "Menunggu pencatatan", "clock")}</section><section class="panel"><div class="panel-header"><div><h2 class="panel-title">${formatDate(attendanceDate, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</h2><p class="panel-description">Jam operasional · Pagi 10.00–12.30 · Siang 13.30–16.00 WIB</p></div></div>${
-      shifts.length
-        ? ["Pagi", "Siang"]
-            .filter((session) => shifts.some((s) => s.session === session))
-            .map(
-              (session) =>
-                `<div class="shift-heading"><span>SESI ${session.toUpperCase()}</span><span>${shifts.filter((s) => s.session === session).length} agen</span></div><div class="table-scroll"><table><thead><tr><th>AGEN</th><th>PERAN</th><th>KEHADIRAN</th><th>JAM HADIR (WIB)</th><th>AKSI</th></tr></thead><tbody>${shifts
-                  .filter((s) => s.session === session)
-                  .map(
-                    (s) =>
-                      `<tr><td>${person(s.agent)}</td><td>${s.pj ? "PJ sesi" : "Anggota"}</td><td>${badge(s.status)}</td><td>${esc(s.time) || "—"}</td><td><button class="text-button" data-action="attendance" data-id="${esc(s.id)}">${icon("edit")}Catat</button></td></tr>`,
-                  )
-                  .join("")}</tbody></table></div>`,
-            )
-            .join("")
-        : '<div class="empty">Belum ada penugasan pada tanggal ini. Gunakan “Tambah penugasan” untuk mengatur jadwal.</div>'
-    }<div class="panel-foot">${icon("info")}Status belum dicatat tidak otomatis dianggap tidak hadir.</div></section>`;
+    subTabs +
+    bodyHtml;
 }
+
+function renderDailyAttendanceView() {
+  const shifts = effectiveShiftsForDate(attendanceDate, attendanceSession);
+  const dayName = getDayName(attendanceDate);
+  const pagiCfg = getSessionConfig(attendanceDate, "Pagi");
+  const siangCfg = getSessionConfig(attendanceDate, "Siang");
+  const settings = activeSettings();
+
+  const opSummary = WORKDAYS.includes(dayName)
+    ? `Jam operasional ${dayName} · Pagi ${pagiCfg.active ? `${pagiCfg.start}–${pagiCfg.end}` : "Libur"} · Siang ${siangCfg.active ? `${siangCfg.start}–${siangCfg.end}` : "Libur"} WIB · Toleransi telat ${settings.lateToleranceMinutes} menit`
+    : `Akhir pekan (${dayName}) · Penugasan ekstra atau kegiatan khusus`;
+
+  return `<div class="toolbar"><div class="attendance-date"><button class="icon-button" data-action="prev-day" aria-label="Hari sebelumnya">${icon("left")}</button><input class="input" id="attendance-date" type="date" aria-label="Tanggal kehadiran" value="${attendanceDate}" required><button class="icon-button" data-action="next-day" aria-label="Hari berikutnya">${icon("right")}</button><button class="button" data-action="today-attendance">Hari ini</button></div><div class="filters"><select id="session-filter" aria-label="Filter sesi"><option value="">Semua sesi</option>${["Pagi", "Siang"].map((s) => `<option ${attendanceSession === s ? "selected" : ""}>${s}</option>`).join("")}</select><button class="button" data-action="export-attendance-csv">Export CSV</button></div></div><div class="banner">${icon("info")}<span>Jadwal otomatis membaca <strong>Jadwal Master hari ${esc(dayName)}</strong>. Agen yang tidak terjadwal namun ikut membantu dapat dicatat lewat <strong>+ Agen ekstra</strong> (bebas denda telat).</span></div><section class="metrics">${metric("Terjadwal & ekstra", shifts.length, "agen", `Hari ${dayName}`, "users")}${metric("Hadir", shifts.filter((s) => s.status === "Hadir").length, "agen", `${shifts.filter((s) => s.extra && s.status === "Hadir").length} agen ekstra`, "check")}${metric("Izin / sakit", shifts.filter((s) => ["Izin", "Sakit"].includes(s.status)).length, "agen", "Bebas denda", "mail")}${metric("Belum dicatat", shifts.filter((s) => s.status === "Belum dicatat").length, "agen", "Menunggu pencatatan", "clock")}</section><section class="panel"><div class="panel-header"><div><h2 class="panel-title">${formatDate(attendanceDate, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</h2><p class="panel-description">${esc(opSummary)}</p></div><button class="text-button" data-action="attendance-tab" data-tab="pengaturan">Ubah jam buka/tutup ${icon("arrow")}</button></div>${
+    shifts.length
+      ? ["Pagi", "Siang"]
+          .filter((session) => shifts.some((s) => s.session === session))
+          .map((session) => {
+            const sessCfg = getSessionConfig(attendanceDate, session);
+            return `<div class="shift-heading"><span>SESI ${session.toUpperCase()} (${sessCfg.active ? `${sessCfg.start}–${sessCfg.end} WIB` : "Diliburkan"})</span><span>${shifts.filter((s) => s.session === session).length} agen</span></div><div class="table-scroll"><table><thead><tr><th>AGEN</th><th>PERAN</th><th>KEHADIRAN</th><th>JAM HADIR & DURASI</th><th>AKSI</th></tr></thead><tbody>${shifts
+              .filter((s) => s.session === session)
+              .map((s) => {
+                const dur = calcShiftDuration(s);
+                const fine = calcShiftFine(s);
+                const roleLabel = s.extra
+                  ? `<span class="status green">Agen Ekstra</span><br><small class="muted">Sukarelawan · Kebal denda</small>`
+                  : s.pj
+                    ? `<span class="status blue">PJ sesi</span><br><small class="muted">Bebas denda</small>`
+                    : `Anggota${s.fromMaster ? `<br><small class="muted">Jadwal master</small>` : ""}`;
+                const timeAndDur =
+                  s.status === "Hadir" && s.time
+                    ? `<strong>${esc(s.time)}</strong> WIB<br><small class="muted">${dur} menit jaga</small>`
+                    : esc(s.time) || "—";
+                const fineBadge =
+                  fine.amount > 0
+                    ? `<br><small class="fine-note">${esc(fine.reason)} · ${formatRupiah(fine.amount)}</small>`
+                    : "";
+                const rowAttrs = s.fromMaster
+                  ? `data-master-id="${esc(s._masterId)}" data-agent="${esc(s.agent)}" data-session="${esc(s.session)}" data-pj="${s.pj ? "true" : "false"}"`
+                  : `data-id="${esc(s.id)}"`;
+                return `<tr>
+                  <td>${person(s.agent)}</td>
+                  <td>${roleLabel}</td>
+                  <td>${badge(s.status)}${fineBadge}</td>
+                  <td>${timeAndDur}</td>
+                  <td>
+                    <div class="quick-actions">
+                      <button class="chip-btn green" data-action="quick-attend" data-status="Hadir" ${rowAttrs} title="Tandai Hadir sekarang">Hadir</button>
+                      <button class="chip-btn amber" data-action="quick-attend" data-status="Izin" ${rowAttrs} title="Tandai Izin">Izin</button>
+                      <button class="chip-btn red" data-action="quick-attend" data-status="Tidak hadir" ${rowAttrs} title="Tandai Tidak hadir">Bolos</button>
+                      <button class="text-button" data-action="attendance" ${rowAttrs}>${icon("edit")}Catat</button>
+                      ${!s.fromMaster ? `<button class="text-button danger-text" data-action="reset-attendance" data-id="${esc(s.id)}" title="Batalkan / hapus catatan">Reset</button>` : ""}
+                    </div>
+                  </td>
+                </tr>`;
+              })
+              .join("")}</tbody></table></div>`;
+          })
+          .join("")
+      : '<div class="empty">Belum ada penugasan pada tanggal ini. Atur jadwal mingguan di tab “Jadwal Master (Mingguan)”, gunakan “Tambah penugasan”, atau catat “+ Agen ekstra”.</div>'
+  }<div class="panel-foot">${icon("info")}Durasi menit dihitung otomatis dari selisih jam hadir ke jam tutup sesi hari tersebut.</div></section>`;
+}
+
+function renderMasterScheduleView() {
+  const settings = activeSettings();
+  const list = state.weeklySchedule || [];
+  return `<div class="banner">${icon("info")}<span><strong>Geser & Lepas (Drag & Drop):</strong> Tarik kartu agen ke hari atau sesi lain untuk memindahkan jadwal jaga secara instan, atau klik label peran (<strong>PJ / Anggota</strong>) untuk mengubah penanggung jawab sesi.</span></div>
+  <div class="master-board">
+    ${WORKDAYS.map((day) => {
+      const dayHours = settings.operationalHours[day] || defaultOperationalHours()[day];
+      return `<section class="panel master-day-card">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">${day}</h2>
+            <p class="panel-description">${list.filter((w) => w.day === day).length} agen terjadwal</p>
+          </div>
+          <button class="icon-button" data-action="add-weekly" data-day="${day}" data-session="Pagi" aria-label="Tambah agen hari ${day}" title="Tambah agen ke ${day}">${icon("plus")}</button>
+        </div>
+        <div class="master-sessions">
+          ${["Pagi", "Siang"]
+            .map((session) => {
+              const cfg = dayHours[session];
+              const slotItems = list
+                .filter((w) => w.day === day && w.session === session)
+                .sort((a, b) => Number(b.pj) - Number(a.pj) || agentName(a.agent).localeCompare(agentName(b.agent), "id"));
+              return `<div class="master-slot ${!cfg.active ? "slot-inactive" : ""}" data-drop-slot="true" data-day="${day}" data-session="${session}">
+                <div class="master-slot-head">
+                  <div>
+                    <strong>SESI ${session.toUpperCase()}</strong>
+                    <small>${cfg.active ? `${cfg.start}–${cfg.end} WIB` : "Sesi Diliburkan"}</small>
+                  </div>
+                  <button class="text-button" data-action="add-weekly" data-day="${day}" data-session="${session}">+ Agen</button>
+                </div>
+                <div class="master-slot-body">
+                  ${
+                    slotItems.length
+                      ? slotItems
+                          .map((item) => {
+                            const ag = findAgent(item.agent);
+                            return `<div class="master-chip" draggable="true" data-weekly-id="${esc(item.id)}">
+                              <span class="drag-handle" aria-hidden="true" title="Geser ke hari/sesi lain">⋮⋮</span>
+                              ${ag ? avatar(ag) : ""}
+                              <div class="master-chip-info">
+                                <strong>${esc(agentName(item.agent))}</strong>
+                                <div class="master-chip-actions">
+                                  <button type="button" class="role-toggle ${item.pj ? "is-pj" : ""}" data-action="toggle-weekly-pj" data-id="${esc(item.id)}" title="Klik untuk ubah PJ / Anggota">${item.pj ? "★ PJ Sesi" : "Anggota"}</button>
+                                  <button type="button" class="role-toggle" data-action="move-weekly" data-id="${esc(item.id)}" title="Pindahkan hari/sesi">Pindah</button>
+                                </div>
+                              </div>
+                              <button type="button" class="chip-remove" data-action="delete-weekly" data-id="${esc(item.id)}" aria-label="Hapus ${esc(agentName(item.agent))} dari ${day} ${session}" title="Hapus dari jadwal">×</button>
+                            </div>`;
+                          })
+                          .join("")
+                      : `<p class="slot-empty">Tarik agen ke sini atau klik + Agen</p>`
+                  }
+                </div>
+              </div>`;
+            })
+            .join("")}
+        </div>
+      </section>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderSettingsView() {
+  const s = activeSettings();
+  return `<form id="settings-form" class="panel settings-panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">Pengaturan Jam Buka, Jam Tutup & Aturan Denda</h2>
+        <p class="panel-description">Sesuaikan waktu mulai (buka) dan selesai (tutup) tiap sesi per hari. Matikan centang jika sesi pada hari tersebut diliburkan.</p>
+      </div>
+      <button type="submit" class="button primary">${icon("check")}Simpan pengaturan</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-days">
+        ${WORKDAYS.map((day) => {
+          const pagi = s.operationalHours[day].Pagi;
+          const siang = s.operationalHours[day].Siang;
+          return `<div class="settings-day-row">
+            <div class="settings-day-name"><strong>${day}</strong></div>
+            <div class="settings-session-box">
+              <label class="settings-check">
+                <input type="checkbox" name="active_${day}_Pagi" ${pagi.active ? "checked" : ""}>
+                <span>Sesi Pagi</span>
+              </label>
+              <div class="settings-time-pair">
+                <label><span>Buka</span><input class="input" type="time" name="start_${day}_Pagi" value="${esc(pagi.start)}" required></label>
+                <label><span>Tutup</span><input class="input" type="time" name="end_${day}_Pagi" value="${esc(pagi.end)}" required></label>
+              </div>
+            </div>
+            <div class="settings-session-box">
+              <label class="settings-check">
+                <input type="checkbox" name="active_${day}_Siang" ${siang.active ? "checked" : ""}>
+                <span>Sesi Siang</span>
+              </label>
+              <div class="settings-time-pair">
+                <label><span>Buka</span><input class="input" type="time" name="start_${day}_Siang" value="${esc(siang.start)}" required></label>
+                <label><span>Tutup</span><input class="input" type="time" name="end_${day}_Siang" value="${esc(siang.end)}" required></label>
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+
+      <div class="settings-rules">
+        <h3>Aturan Toleransi & Kas Denda</h3>
+        <p class="help">Denda hanya berlaku untuk jadwal reguler anggota biasa. <strong>PJ Sesi</strong>, <strong>Agen Ekstra (Sukarelawan)</strong>, serta status <strong>Izin / Sakit</strong> otomatis bebas denda.</p>
+        <div class="form-row" style="margin-top:14px">
+          <label class="form-field">
+            <span>Toleransi keterlambatan (menit)</span>
+            <input class="input" type="number" min="0" max="180" name="lateToleranceMinutes" value="${s.lateToleranceMinutes}" required>
+          </label>
+          <label class="form-field">
+            <span>Nominal denda terlambat (Rp)</span>
+            <input class="input" type="number" min="0" step="500" name="lateFineAmount" value="${s.lateFineAmount}" required>
+          </label>
+          <label class="form-field">
+            <span>Nominal denda tidak hadir / bolos (Rp)</span>
+            <input class="input" type="number" min="0" step="500" name="absentFineAmount" value="${s.absentFineAmount}" required>
+          </label>
+        </div>
+      </div>
+    </div>
+  </form>`;
+}
+
+function renderFinesView() {
+  const q = fineSearch.toLocaleLowerCase("id");
+  const finedShifts = state.shifts
+    .map((s) => ({ shift: s, fine: calcShiftFine(s) }))
+    .filter(({ shift, fine }) => {
+      if (fine.amount <= 0) return false;
+      if (fineStatusFilter === "unpaid" && shift.finePaid) return false;
+      if (fineStatusFilter === "paid" && !shift.finePaid) return false;
+      if (q && !agentName(shift.agent).toLocaleLowerCase("id").includes(q))
+        return false;
+      return true;
+    })
+    .sort((a, b) => b.shift.date.localeCompare(a.shift.date));
+
+  const allFined = state.shifts
+    .map((s) => ({ shift: s, fine: calcShiftFine(s) }))
+    .filter((x) => x.fine.amount > 0);
+  const unpaidTotal = allFined
+    .filter((x) => !x.shift.finePaid)
+    .reduce((acc, x) => acc + x.fine.amount, 0);
+  const paidTotal = allFined
+    .filter((x) => x.shift.finePaid)
+    .reduce((acc, x) => acc + x.fine.amount, 0);
+
+  return `<section class="metrics">
+    ${metric("Tunggakan denda", formatRupiah(unpaidTotal), "", `${allFined.filter((x) => !x.shift.finePaid).length} catatan belum lunas`, "info")}
+    ${metric("Kas denda terkumpul", formatRupiah(paidTotal), "", `${allFined.filter((x) => x.shift.finePaid).length} catatan sudah lunas`, "check")}
+    ${metric("Total kasus denda", allFined.length, "kasus", "Otomatis dari keterlambatan & bolos", "clock")}
+    ${metric("Aturan denda aktif", formatRupiah(activeSettings().lateFineAmount), "/ telat", `Bolos: ${formatRupiah(activeSettings().absentFineAmount)}`, "review")}
+  </section>
+  <div class="toolbar">
+    <div class="filters">
+      <label class="search-field">${icon("search")}<input class="input" id="fine-search" type="search" placeholder="Cari nama agen..." aria-label="Cari denda agen" value="${esc(fineSearch)}"></label>
+      <select id="fine-status-filter" aria-label="Filter status denda">
+        <option value="">Semua status</option>
+        <option value="unpaid" ${fineStatusFilter === "unpaid" ? "selected" : ""}>Belum lunas</option>
+        <option value="paid" ${fineStatusFilter === "paid" ? "selected" : ""}>Sudah lunas</option>
+      </select>
+    </div>
+    <button class="button" data-action="export-fines-csv">Export CSV Denda</button>
+  </div>
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">Rekapitulasi kas denda kehadiran</h2>
+        <p class="panel-description">Dihitung otomatis berdasarkan jam buka sesi dan batas toleransi keterlambatan</p>
+      </div>
+    </div>
+    ${
+      finedShifts.length
+        ? `<div class="table-scroll"><table><thead><tr><th>TANGGAL & SESI</th><th>AGEN</th><th>KETERANGAN</th><th>NOMINAL</th><th>STATUS KAS</th><th>AKSI</th></tr></thead><tbody>
+          ${finedShifts
+            .map(
+              ({ shift, fine }) => `<tr>
+                <td><strong>${shortDate(shift.date)}</strong><br><small class="muted">Sesi ${esc(shift.session)}</small></td>
+                <td>${person(shift.agent)}</td>
+                <td>${esc(fine.reason)}</td>
+                <td><strong>${formatRupiah(fine.amount)}</strong></td>
+                <td>${badge(shift.finePaid ? "Lunas" : "Belum lunas")}</td>
+                <td>
+                  <button class="button" data-action="toggle-fine-paid" data-id="${esc(shift.id)}">${shift.finePaid ? "Batalkan lunas" : "Tandai lunas"}</button>
+                </td>
+              </tr>`,
+            )
+            .join("")}
+        </tbody></table></div>`
+        : '<div class="empty">Tidak ada catatan denda pada filter ini.</div>'
+    }
+  </section>`;
+}
+
 function filteredPosts() {
   return state.posts
     .filter(
@@ -349,12 +1070,12 @@ function openDialog(title, eyebrow, body) {
   lastFocused = document.activeElement;
   document.querySelector("#dialog-content").innerHTML =
     `<div class="dialog-header"><div><p class="eyebrow">${eyebrow}</p><h2 id="dialog-title">${esc(title)}</h2></div><button class="icon-button" data-action="close" aria-label="Tutup panel">${icon("close")}</button></div><div class="dialog-body">${body}</div>`;
-  // Keep field names separate from option text and longer help descriptions.
   dialog.querySelectorAll(".form-field").forEach((label, index) => {
     const control = label.querySelector("input, select, textarea");
-    const title = label.querySelector("span");
+    const titleEl = label.querySelector("span");
     const help = label.querySelector(".help");
-    if (control && title) control.setAttribute("aria-label", title.textContent);
+    if (control && titleEl)
+      control.setAttribute("aria-label", titleEl.textContent);
     if (control && help) {
       help.id = `field-help-${index}`;
       control.setAttribute("aria-describedby", help.id);
@@ -380,11 +1101,13 @@ function openAgent(agentId) {
   const a = findAgent(agentId);
   if (!a) return;
   const shifts = state.shifts.filter((s) => s.agent === a.id),
-    assigned = state.posts.filter((p) => p.agent === a.id);
+    weekly = (state.weeklySchedule || []).filter((w) => w.agent === a.id),
+    assigned = state.posts.filter((p) => p.agent === a.id),
+    agentStat = computeAgentStats("all").find((x) => x.agent.id === a.id);
   openDialog(
     "Profil agen",
     "DIREKTORI POJOK STATISTIK",
-    `<div class="profile-hero">${avatar(a)}<div><h3>${esc(a.name)}</h3><p>${esc(a.position)}</p><span class="division-label">${esc(a.division)}</span></div></div><div class="photo-control"><label class="field-label" for="agent-photo">Foto profil</label><input type="file" id="agent-photo" data-agent="${esc(a.id)}" accept="image/png,image/jpeg,image/webp"><p class="help">JPG, PNG, atau WebP, maksimal 5 MB. Foto dipotong persegi dan diperkecil sebelum diunggah.</p>${a.photo ? `<button class="text-button" data-action="remove-photo" data-id="${esc(a.id)}">Hapus foto</button>` : ""}</div><dl class="profile-data"><div><dt>Periode</dt><dd>${esc(a.period)}</dd></div><div><dt>Status keanggotaan</dt><dd>${badge(a.active ? "Aktif" : "Nonaktif")}</dd></div></dl><div class="profile-note">Profil ini merupakan data anggota. Agen tidak memiliki akun login; seluruh pengelolaan dilakukan admin.</div><section class="profile-section"><h3>Penugasan jaga <span class="pill-count">${shifts.length}</span></h3>${shifts.length ? shifts.map((s) => `<div class="task-row"><span class="task-icon blue">${icon("calendar")}</span><span><strong>${shortDate(s.date)} · Sesi ${s.session}</strong><small>${s.pj ? "Penanggung jawab sesi" : "Anggota"}</small></span>${badge(s.status)}</div>`).join("") : '<p class="help">Belum ada penugasan.</p>'}</section><section class="profile-section"><h3>Kontribusi konten <span class="pill-count">${assigned.length}</span></h3>${assigned.map(upcomingRow).join("") || '<p class="help">Belum ada konten yang ditugaskan.</p>'}</section><div class="dialog-footer"><span class="help">Dikelola oleh admin</span><button class="button" data-action="edit-agent" data-id="${esc(a.id)}">${icon("edit")}Edit profil</button></div>`,
+    `<div class="profile-hero">${avatar(a)}<div><h3>${esc(a.name)}</h3><p>${esc(a.position)}</p><span class="division-label">${esc(a.division)}</span></div></div><div class="photo-control"><label class="field-label" for="agent-photo">Foto profil</label><input type="file" id="agent-photo" data-agent="${esc(a.id)}" accept="image/png,image/jpeg,image/webp"><p class="help">JPG, PNG, atau WebP, maksimal 5 MB. Foto dipotong persegi dan diperkecil sebelum diunggah.</p>${a.photo ? `<button class="text-button" data-action="remove-photo" data-id="${esc(a.id)}">Hapus foto</button>` : ""}</div><dl class="profile-data"><div><dt>Periode</dt><dd>${esc(a.period)}</dd></div><div><dt>Status keanggotaan</dt><dd>${badge(a.active ? "Aktif" : "Nonaktif")}</dd></div><div><dt>Total kehadiran</dt><dd><strong>${agentStat?.totalSessions || 0} sesi</strong> (${agentStat?.extraSessions || 0} ekstra)</dd></div><div><dt>Total durasi jaga</dt><dd><strong>${agentStat?.totalMinutes || 0} menit</strong></dd></div></dl><div class="profile-note">Profil ini merupakan data anggota. Agen tidak memiliki akun login; seluruh pengelolaan dilakukan admin.</div><section class="profile-section"><h3>Jadwal rutin mingguan <span class="pill-count">${weekly.length}</span></h3>${weekly.length ? weekly.map((w) => `<div class="task-row"><span class="task-icon blue">${icon("calendar")}</span><span><strong>Setiap ${esc(w.day)} · Sesi ${esc(w.session)}</strong><small>${w.pj ? "Penanggung jawab sesi" : "Anggota"}</small></span></div>`).join("") : '<p class="help">Belum ada jadwal rutin mingguan.</p>'}</section><section class="profile-section"><h3>Riwayat penugasan & absensi <span class="pill-count">${shifts.length}</span></h3>${shifts.length ? shifts.map((s) => `<div class="task-row"><span class="task-icon blue">${icon("calendar")}</span><span><strong>${shortDate(s.date)} · Sesi ${s.session}</strong><small>${s.extra ? "Agen ekstra (sukarelawan)" : s.pj ? "Penanggung jawab sesi" : "Anggota"}${s.time ? ` · ${s.time} WIB (${calcShiftDuration(s)} mnt)` : ""}</small></span>${badge(s.status)}</div>`).join("") : '<p class="help">Belum ada penugasan.</p>'}</section><section class="profile-section"><h3>Kontribusi konten <span class="pill-count">${assigned.length}</span></h3>${assigned.map(upcomingRow).join("") || '<p class="help">Belum ada konten yang ditugaskan.</p>'}</section><div class="dialog-footer"><span class="help">Dikelola oleh admin</span><button class="button" data-action="edit-agent" data-id="${esc(a.id)}">${icon("edit")}Edit profil</button></div>`,
   );
 }
 function options(values, current) {
@@ -485,16 +1208,72 @@ function editShift() {
   openDialog(
     "Tambah penugasan",
     "JADWAL TIM",
-    `<form id="shift-form"><label class="form-field"><span>Agen</span><select name="agent" required>${agentOptions("")}</select></label><label class="form-field"><span>Tanggal</span><input class="input" name="date" type="date" value="${attendanceDate}" required></label><label class="form-field"><span>Sesi</span><select name="session">${options(["Pagi", "Siang"], attendanceSession || "Pagi")}</select></label><label class="form-field"><span>Peran</span><select name="role"><option value="member">Anggota</option><option value="pj">Penanggung jawab sesi</option></select></label><p class="help">Penugasan ini berlaku hanya untuk tanggal yang dipilih.</p><div class="dialog-footer"><button class="button" type="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan penugasan</button></div></form>`,
+    `<form id="shift-form"><label class="form-field"><span>Agen</span><select name="agent" required>${agentOptions("")}</select></label><label class="form-field"><span>Tanggal</span><input class="input" name="date" type="date" value="${attendanceDate}" required></label><label class="form-field"><span>Sesi</span><select name="session">${options(["Pagi", "Siang"], attendanceSession || "Pagi")}</select></label><label class="form-field"><span>Peran</span><select name="role"><option value="member">Anggota</option><option value="pj">Penanggung jawab sesi</option><option value="extra">Agen ekstra (sukarelawan · bebas denda)</option></select></label><p class="help">Penugasan ini berlaku untuk tanggal yang dipilih. Untuk jadwal rutin mingguan per hari, gunakan tab Jadwal Master.</p><div class="dialog-footer"><button class="button" type="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan penugasan</button></div></form>`,
   );
 }
-function recordAttendance(shiftId) {
-  const s = state.shifts.find((x) => x.id === shiftId);
+function openExtraShiftModal() {
+  const currentTime = nowJakartaTime();
+  openDialog(
+    "Hadirkan agen ekstra (sukarelawan)",
+    "SUKARELAWAN & BACK-UP JAGA",
+    `<form id="extra-shift-form">
+      <label class="form-field"><span>Pilih agen sukarelawan</span><select name="agent" required>${agentOptions("")}</select></label>
+      <div class="form-row">
+        <label class="form-field"><span>Tanggal</span><input class="input" name="date" type="date" value="${attendanceDate}" required></label>
+        <label class="form-field"><span>Sesi</span><select name="session">${options(["Pagi", "Siang"], attendanceSession || "Pagi")}</select></label>
+      </div>
+      <label class="form-field"><span>Jam hadir (WIB)</span><input class="input" name="time" type="time" value="${esc(currentTime)}" required><small class="help">Agen ekstra tidak memiliki jadwal wajib di sesi ini, sehingga <strong>100% bebas denda keterlambatan</strong> dan durasi menit jaganya tetap dihitung penuh di Dashboard.</small></label>
+      <div class="dialog-footer">
+        <button class="button" type="button" data-action="close">Batal</button>
+        <button class="button primary" type="submit">Catat hadir ekstra</button>
+      </div>
+    </form>`,
+  );
+}
+function openWeeklyModal(day = "Senin", session = "Pagi", existingId = "") {
+  const existing = (state.weeklySchedule || []).find(
+    (w) => w.id === existingId,
+  );
+  openDialog(
+    existing ? "Pindahkan jadwal rutin" : "Tambah ke Jadwal Master",
+    "JADWAL MASTER MINGGUAN",
+    `<form id="weekly-form" data-id="${esc(existingId)}">
+      <label class="form-field"><span>Agen</span><select name="agent" required ${existing ? "disabled" : ""}>${agentOptions(existing?.agent || "")}</select></label>
+      <div class="form-row">
+        <label class="form-field"><span>Hari jaga</span><select name="day">${options(WORKDAYS, existing?.day || day)}</select></label>
+        <label class="form-field"><span>Sesi</span><select name="session">${options(["Pagi", "Siang"], existing?.session || session)}</select></label>
+      </div>
+      <label class="form-field"><span>Peran di sesi ini</span><select name="role"><option value="member" ${!existing?.pj ? "selected" : ""}>Anggota</option><option value="pj" ${existing?.pj ? "selected" : ""}>Penanggung jawab sesi (PJ)</option></select></label>
+      <p class="help">Jadwal Master berlaku berulang setiap minggu pada hari dan sesi tersebut.</p>
+      <div class="dialog-footer">
+        <button class="button" type="button" data-action="close">Batal</button>
+        <button class="button primary" type="submit">Simpan jadwal master</button>
+      </div>
+    </form>`,
+  );
+}
+function recordAttendance(shiftId, masterMeta = null) {
+  let s = state.shifts.find((x) => x.id === shiftId);
+  if (!s && masterMeta) {
+    s = {
+      id: "",
+      _masterMeta: masterMeta,
+      agent: masterMeta.agent,
+      date: attendanceDate,
+      session: masterMeta.session,
+      pj: masterMeta.pj,
+      extra: false,
+      status: "Belum dicatat",
+      time: "",
+    };
+  }
   if (!s) return;
+  const defaultTime =
+    s.time || getSessionConfig(s.date, s.session).start || "10:00";
   openDialog(
     "Catat kehadiran",
     "ABSENSI OLEH ADMIN",
-    `<div class="profile-hero">${person(s.agent)}</div><p class="help">${formatDate(s.date)} · Sesi ${s.session} · ${s.pj ? "Penanggung jawab" : "Anggota"}</p><form id="attendance-form" data-id="${esc(s.id)}"><label class="form-field"><span>Status kehadiran</span><select name="status" id="attendance-status">${options(["Belum dicatat", "Hadir", "Izin", "Sakit", "Tidak hadir"], s.status)}</select></label><label class="form-field"><span>Jam hadir (WIB)</span><input class="input" name="time" id="attendance-time" type="time" value="${esc(s.time)}" ${s.status === "Hadir" ? "required" : "disabled"}><small class="help">Masukkan waktu kehadiran sebenarnya. Hanya diperlukan untuk status Hadir.</small></label><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan kehadiran</button></div></form>`,
+    `<div class="profile-hero">${person(s.agent)}</div><p class="help">${formatDate(s.date)} · Sesi ${s.session} · ${s.extra ? "Agen ekstra (sukarelawan · bebas denda)" : s.pj ? "Penanggung jawab" : "Anggota"}</p><form id="attendance-form" data-id="${esc(s.id)}" data-agent="${esc(s.agent)}" data-date="${esc(s.date)}" data-session="${esc(s.session)}" data-pj="${s.pj ? "true" : "false"}"><label class="form-field"><span>Status kehadiran</span><select name="status" id="attendance-status">${options(["Belum dicatat", "Hadir", "Izin", "Sakit", "Tidak hadir"], s.status)}</select></label><label class="form-field"><span>Jam hadir (WIB)</span><input class="input" name="time" id="attendance-time" type="time" value="${esc(s.status === "Hadir" ? s.time : defaultTime)}" ${s.status === "Hadir" ? "required" : "disabled"}><small class="help">Masukkan waktu kehadiran sebenarnya. Durasi menit jaga dan denda (bila terlambat) dihitung otomatis.</small></label><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan kehadiran</button></div></form>`,
   );
 }
 function confirmAction(title, description, action, recordId = "") {
@@ -549,6 +1328,75 @@ function navigate(target) {
     render();
   } else location.hash = target;
 }
+
+// Drag & Drop handlers for Jadwal Master Mingguan
+document.addEventListener("dragstart", (e) => {
+  const chip = e.target.closest(".master-chip[data-weekly-id]");
+  if (!chip || !authorized || operationPending) return;
+  draggedWeeklyId = chip.dataset.weeklyId;
+  chip.classList.add("dragging");
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", draggedWeeklyId);
+  }
+});
+document.addEventListener("dragend", (e) => {
+  const chip = e.target.closest(".master-chip");
+  if (chip) chip.classList.remove("dragging");
+  document
+    .querySelectorAll(".master-slot.drag-over")
+    .forEach((el) => el.classList.remove("drag-over"));
+});
+document.addEventListener("dragover", (e) => {
+  const slot = e.target.closest(".master-slot[data-drop-slot]");
+  if (!slot || !draggedWeeklyId) return;
+  e.preventDefault();
+  slot.classList.add("drag-over");
+});
+document.addEventListener("dragleave", (e) => {
+  const slot = e.target.closest(".master-slot[data-drop-slot]");
+  if (slot && !slot.contains(e.relatedTarget)) {
+    slot.classList.remove("drag-over");
+  }
+});
+document.addEventListener("drop", async (e) => {
+  const slot = e.target.closest(".master-slot[data-drop-slot]");
+  if (!slot || !draggedWeeklyId || !authorized || operationPending) return;
+  e.preventDefault();
+  slot.classList.remove("drag-over");
+  const targetDay = slot.dataset.day;
+  const targetSession = slot.dataset.session;
+  const item = (state.weeklySchedule || []).find(
+    (w) => w.id === draggedWeeklyId,
+  );
+  draggedWeeklyId = "";
+  if (!item || (item.day === targetDay && item.session === targetSession))
+    return;
+  if (
+    (state.weeklySchedule || []).some(
+      (w) =>
+        w.id !== item.id &&
+        w.agent === item.agent &&
+        w.day === targetDay &&
+        w.session === targetSession,
+    )
+  ) {
+    toast("Agen sudah terdaftar di hari dan sesi tersebut.");
+    return;
+  }
+  if (
+    await update((s) => {
+      const target = s.weeklySchedule.find((w) => w.id === item.id);
+      if (target) {
+        target.day = targetDay;
+        target.session = targetSession;
+      }
+    }, `Jadwal dipindahkan ke ${targetDay} · Sesi ${targetSession}.`)
+  ) {
+    renderAttendance();
+  }
+});
+
 document.addEventListener("click", async (e) => {
   if (operationPending || !authorized) return;
   const button = e.target.closest("[data-action]");
@@ -561,6 +1409,12 @@ document.addEventListener("click", async (e) => {
       break;
     case "confirm-import-agents":
       await confirmAgentImport();
+      break;
+    case "import-legacy-schedule":
+      await previewScheduleImport();
+      break;
+    case "confirm-import-schedule":
+      await confirmScheduleImport();
       break;
     case "close":
       closeDialog();
@@ -625,6 +1479,24 @@ document.addEventListener("click", async (e) => {
       ).slice(0, 7);
       navigate("konten");
       break;
+    case "open-fines-tab":
+      attendanceTab = "denda";
+      navigate("kehadiran");
+      break;
+    case "analytics-scope":
+      analyticsScope = button.dataset.scope || "all";
+      renderHome();
+      break;
+    case "show-certificate":
+      showCertificate(recordId);
+      break;
+    case "print-certificate":
+      window.print();
+      break;
+    case "attendance-tab":
+      attendanceTab = button.dataset.tab || "harian";
+      renderAttendance();
+      break;
     case "prev-day":
       attendanceDate = offsetDate(attendanceDate, -1);
       renderAttendance();
@@ -640,9 +1512,231 @@ document.addEventListener("click", async (e) => {
     case "new-shift":
       editShift();
       break;
-    case "attendance":
-      recordAttendance(recordId);
+    case "new-extra-shift":
+      openExtraShiftModal();
       break;
+    case "add-weekly":
+      openWeeklyModal(button.dataset.day, button.dataset.session);
+      break;
+    case "move-weekly":
+      openWeeklyModal("Senin", "Pagi", recordId);
+      break;
+    case "toggle-weekly-pj":
+      if (
+        await update((s) => {
+          const w = s.weeklySchedule.find((x) => x.id === recordId);
+          if (w) w.pj = !w.pj;
+        }, "Peran jadwal master diperbarui.")
+      ) {
+        renderAttendance();
+      }
+      break;
+    case "delete-weekly":
+      confirmAction(
+        "Hapus jadwal rutin",
+        "Agen ini akan dihapus dari slot Jadwal Master mingguan tersebut.",
+        "confirm-delete-weekly",
+        recordId,
+      );
+      break;
+    case "confirm-delete-weekly":
+      if (
+        await update(
+          (s) =>
+            (s.weeklySchedule = s.weeklySchedule.filter(
+              (w) => w.id !== recordId,
+            )),
+          "Jadwal rutin dihapus.",
+        )
+      ) {
+        closeDialog();
+        renderAttendance();
+      }
+      break;
+    case "attendance":
+      if (recordId) {
+        recordAttendance(recordId);
+      } else {
+        recordAttendance("", {
+          agent: button.dataset.agent,
+          session: button.dataset.session,
+          pj: button.dataset.pj === "true",
+        });
+      }
+      break;
+    case "quick-attend": {
+      const targetStatus = button.dataset.status;
+      const cfg = getSessionConfig(
+        attendanceDate,
+        button.dataset.session || "Pagi",
+      );
+      const autoTime =
+        targetStatus === "Hadir"
+          ? attendanceDate === TODAY
+            ? nowJakartaTime()
+            : cfg.start
+          : "";
+      if (recordId) {
+        if (
+          await update((s) => {
+            const row = s.shifts.find((x) => x.id === recordId);
+            if (row) {
+              row.status = targetStatus;
+              row.time = targetStatus === "Hadir" ? row.time || autoTime : "";
+            }
+          }, `Status diubah menjadi ${targetStatus}.`)
+        ) {
+          renderAttendance();
+        }
+      } else {
+        const agentId = button.dataset.agent;
+        const session = button.dataset.session;
+        const isPj = button.dataset.pj === "true";
+        if (
+          await update((s) => {
+            s.shifts.push({
+              id: id(),
+              date: attendanceDate,
+              session,
+              agent: agentId,
+              pj: isPj,
+              extra: false,
+              finePaid: false,
+              status: targetStatus,
+              time: autoTime,
+            });
+          }, `Kehadiran ${targetStatus} tercatat.`)
+        ) {
+          renderAttendance();
+        }
+      }
+      break;
+    }
+    case "reset-attendance":
+      confirmAction(
+        "Batalkan catatan kehadiran",
+        "Catatan kehadiran (beserta denda terkait jika ada) pada sesi ini akan direset.",
+        "confirm-reset-attendance",
+        recordId,
+      );
+      break;
+    case "confirm-reset-attendance":
+      if (
+        await update(
+          (s) => (s.shifts = s.shifts.filter((x) => x.id !== recordId)),
+          "Catatan kehadiran dibatalkan.",
+        )
+      ) {
+        closeDialog();
+        renderAttendance();
+      }
+      break;
+    case "mark-all-present": {
+      const pendingList = effectiveShiftsForDate(
+        attendanceDate,
+        attendanceSession,
+      ).filter((s) => s.status === "Belum dicatat");
+      if (!pendingList.length) {
+        toast("Semua agen terjadwal sudah dicatat kehadirannya.");
+        return;
+      }
+      const mutators = pendingList.map((item) => {
+        const sessStart = getSessionConfig(attendanceDate, item.session).start;
+        if (item.fromMaster) {
+          return (s) => {
+            s.shifts.push({
+              id: id(),
+              date: attendanceDate,
+              session: item.session,
+              agent: item.agent,
+              pj: Boolean(item.pj),
+              extra: false,
+              finePaid: false,
+              status: "Hadir",
+              time: sessStart,
+            });
+          };
+        }
+        return (s) => {
+          const target = s.shifts.find((x) => x.id === item.id);
+          if (target) {
+            target.status = "Hadir";
+            target.time = sessStart;
+          }
+        };
+      });
+      if (
+        await updateMany(
+          mutators,
+          `${pendingList.length} agen ditandai Hadir tepat waktu.`,
+        )
+      ) {
+        renderAttendance();
+      }
+      break;
+    }
+    case "toggle-fine-paid":
+      if (
+        await update((s) => {
+          const target = s.shifts.find((x) => x.id === recordId);
+          if (target) target.finePaid = !target.finePaid;
+        }, "Status pembayaran denda diperbarui.")
+      ) {
+        renderAttendance();
+      }
+      break;
+    case "export-attendance-csv": {
+      const rows = effectiveShiftsForDate(attendanceDate, attendanceSession).map(
+        (s) => [
+          s.date,
+          getDayName(s.date),
+          s.session,
+          agentName(s.agent),
+          s.extra ? "Agen Ekstra" : s.pj ? "PJ Sesi" : "Anggota",
+          s.status,
+          s.time || "-",
+          calcShiftDuration(s),
+          calcShiftFine(s).amount,
+        ],
+      );
+      downloadCsv(
+        `absensi-pojok-statistik-${attendanceDate}.csv`,
+        [
+          "Tanggal",
+          "Hari",
+          "Sesi",
+          "Nama Agen",
+          "Peran",
+          "Status",
+          "Jam Hadir",
+          "Durasi (Menit)",
+          "Denda (Rp)",
+        ],
+        rows,
+      );
+      toast("File CSV absensi berhasil diunduh.");
+      break;
+    }
+    case "export-fines-csv": {
+      const rows = state.shifts
+        .map((s) => ({ s, fine: calcShiftFine(s) }))
+        .filter((x) => x.fine.amount > 0)
+        .map(({ s, fine }) => [
+          s.date,
+          s.session,
+          agentName(s.agent),
+          fine.reason,
+          fine.amount,
+          s.finePaid ? "Lunas" : "Belum Lunas",
+        ]);
+      downloadCsv(
+        `rekap-denda-pojok-statistik-${TODAY}.csv`,
+        ["Tanggal", "Sesi", "Nama Agen", "Keterangan", "Nominal Denda", "Status"],
+        rows,
+      );
+      toast("File CSV rekap denda berhasil diunduh.");
+      break;
+    }
     case "prev-month":
       shiftMonth(-1);
       break;
@@ -668,6 +1762,10 @@ document.addEventListener("input", (e) => {
     agentSearch = e.target.value;
     renderAgentCards();
   }
+  if (e.target.id === "fine-search") {
+    fineSearch = e.target.value;
+    renderAttendance();
+  }
   if (e.target.id === "post-link") e.target.setCustomValidity("");
 });
 document.addEventListener("change", async (e) => {
@@ -679,6 +1777,10 @@ document.addEventListener("change", async (e) => {
       break;
     case "session-filter":
       attendanceSession = el.value;
+      renderAttendance();
+      break;
+    case "fine-status-filter":
+      fineStatusFilter = el.value;
       renderAttendance();
       break;
     case "attendance-date":
@@ -757,9 +1859,15 @@ document.addEventListener("submit", async (e) => {
   const form = e.target;
   if (!authorized) return;
   if (
-    !["agent-form", "post-form", "shift-form", "attendance-form"].includes(
-      form.id,
-    )
+    ![
+      "agent-form",
+      "post-form",
+      "shift-form",
+      "extra-shift-form",
+      "weekly-form",
+      "settings-form",
+      "attendance-form",
+    ].includes(form.id)
   )
     return;
   e.preventDefault();
@@ -850,6 +1958,8 @@ document.addEventListener("submit", async (e) => {
         toast("Agen sudah terdaftar pada tanggal dan sesi tersebut.");
         return;
       }
+      const isExtra = data.role === "extra";
+      const isPj = data.role === "pj";
       if (
         await update(
           (s) =>
@@ -858,7 +1968,9 @@ document.addEventListener("submit", async (e) => {
               date: data.date,
               session: data.session,
               agent: data.agent,
-              pj: data.role === "pj",
+              pj: isPj,
+              extra: isExtra,
+              finePaid: false,
               status: "Belum dicatat",
               time: "",
             }),
@@ -872,24 +1984,165 @@ document.addEventListener("submit", async (e) => {
       }
       break;
     }
-    case "attendance-form":
+    case "extra-shift-form": {
+      const existing = state.shifts.find(
+        (s) =>
+          s.date === data.date &&
+          s.session === data.session &&
+          s.agent === data.agent,
+      );
       if (
-        await update(
-          (s) =>
-            Object.assign(
-              s.shifts.find((x) => x.id === recordId),
-              {
-                status: data.status,
-                time: data.status === "Hadir" ? data.time : "",
-              },
-            ),
-          "Kehadiran diperbarui.",
+        await update((s) => {
+          if (existing) {
+            const target = s.shifts.find((x) => x.id === existing.id);
+            Object.assign(target, {
+              extra: true,
+              status: "Hadir",
+              time: data.time,
+            });
+          } else {
+            s.shifts.push({
+              id: id(),
+              date: data.date,
+              session: data.session,
+              agent: data.agent,
+              pj: false,
+              extra: true,
+              finePaid: false,
+              status: "Hadir",
+              time: data.time,
+            });
+          }
+        }, "Agen ekstra (sukarelawan) tercatat hadir & bebas denda.")
+      ) {
+        attendanceDate = data.date;
+        attendanceSession = "";
+        closeDialog();
+        renderAttendance();
+      }
+      break;
+    }
+    case "weekly-form": {
+      const targetId = recordId || "";
+      const existing = (state.weeklySchedule || []).find(
+        (w) => w.id === targetId,
+      );
+      const agentId = existing ? existing.agent : data.agent;
+      if (
+        (state.weeklySchedule || []).some(
+          (w) =>
+            w.id !== targetId &&
+            w.agent === agentId &&
+            w.day === data.day &&
+            w.session === data.session,
         )
+      ) {
+        toast("Agen sudah terdaftar pada hari dan sesi tersebut di Jadwal Master.");
+        return;
+      }
+      if (
+        await update((s) => {
+          if (existing) {
+            const w = s.weeklySchedule.find((x) => x.id === targetId);
+            Object.assign(w, {
+              day: data.day,
+              session: data.session,
+              pj: data.role === "pj",
+            });
+          } else {
+            s.weeklySchedule.push({
+              id: id(),
+              agent: agentId,
+              day: data.day,
+              session: data.session,
+              pj: data.role === "pj",
+            });
+          }
+        }, "Jadwal Master mingguan diperbarui.")
       ) {
         closeDialog();
         renderAttendance();
       }
       break;
+    }
+    case "settings-form": {
+      const operationalHours = {};
+      for (const day of WORKDAYS) {
+        operationalHours[day] = {
+          Pagi: {
+            active: Boolean(data[`active_${day}_Pagi`]),
+            start: data[`start_${day}_Pagi`] || "10:00",
+            end: data[`end_${day}_Pagi`] || "12:30",
+          },
+          Siang: {
+            active: Boolean(data[`active_${day}_Siang`]),
+            start: data[`start_${day}_Siang`] || "13:30",
+            end: data[`end_${day}_Siang`] || "16:00",
+          },
+        };
+      }
+      const patch = {
+        id: SETTINGS_ID,
+        lateToleranceMinutes: Math.max(
+          0,
+          Number(data.lateToleranceMinutes ?? 15),
+        ),
+        lateFineAmount: Math.max(0, Number(data.lateFineAmount ?? 5000)),
+        absentFineAmount: Math.max(0, Number(data.absentFineAmount ?? 10000)),
+        operationalHours,
+      };
+      if (
+        await update((s) => {
+          if (s.settings.length) Object.assign(s.settings[0], patch);
+          else s.settings.push(patch);
+        }, "Pengaturan jam buka/tutup & aturan denda tersimpan.")
+      ) {
+        renderAttendance();
+      }
+      break;
+    }
+    case "attendance-form": {
+      if (recordId) {
+        if (
+          await update(
+            (s) =>
+              Object.assign(
+                s.shifts.find((x) => x.id === recordId),
+                {
+                  status: data.status,
+                  time: data.status === "Hadir" ? data.time : "",
+                },
+              ),
+            "Kehadiran diperbarui.",
+          )
+        ) {
+          closeDialog();
+          renderAttendance();
+        }
+      } else {
+        if (
+          await update(
+            (s) =>
+              s.shifts.push({
+                id: id(),
+                date: form.dataset.date || attendanceDate,
+                session: form.dataset.session || "Pagi",
+                agent: form.dataset.agent,
+                pj: form.dataset.pj === "true",
+                extra: false,
+                finePaid: false,
+                status: data.status,
+                time: data.status === "Hadir" ? data.time : "",
+              }),
+            "Kehadiran diperbarui.",
+          )
+        ) {
+          closeDialog();
+          renderAttendance();
+        }
+      }
+      break;
+    }
   }
 });
 window.addEventListener("hashchange", () => {
@@ -932,6 +2185,7 @@ function clearWorkspace(message = "") {
   document.querySelector("#dialog-content").replaceChildren();
   draftImages = [];
   legacyAgentPreview = [];
+  legacySchedulePreview = [];
   if (dialog.open) dialog.close();
   shell.hidden = true;
   authScreen.hidden = false;
@@ -1079,7 +2333,7 @@ async function previewAgentImport() {
     openDialog(
       "Impor agen lama",
       "PRATINJAU DATA",
-      `<p class="help">${records.length} profil akan disalin dari daftar agen lama. Nama, divisi, dan status BPH ikut disalin; jabatan dapat diedit setelah impor. Jadwal dan riwayat absensi lama tidak ikut dipindahkan.</p><div class="table-scroll"><table><thead><tr><th>NAMA</th><th>DIVISI</th><th>JABATAN AWAL</th></tr></thead><tbody>${records.map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(a.division)}</td><td>${esc(a.position)}</td></tr>`).join("")}</tbody></table></div><p class="help">Profil dengan ID sumber yang pernah diimpor akan dilewati. Data lama tetap tersedia.</p><div class="dialog-footer"><button class="button" data-action="close">Batal</button><button class="button primary" data-action="confirm-import-agents" ${records.length ? "" : "disabled"}>Impor ${records.length} agen</button></div>`,
+      `<p class="help">${records.length} profil akan disalin dari daftar agen lama. Nama, divisi, dan status Pengurus Inti / BPH ikut disalin; jabatan dapat diedit setelah impor.</p><div class="table-scroll"><table><thead><tr><th>NAMA</th><th>DIVISI</th><th>JABATAN AWAL</th></tr></thead><tbody>${records.map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(a.division)}</td><td>${esc(a.position)}</td></tr>`).join("")}</tbody></table></div><p class="help">Profil dengan ID sumber yang pernah diimpor akan dilewati. Data lama tetap tersedia.</p><div class="dialog-footer"><button class="button" data-action="close">Batal</button><button class="button primary" data-action="confirm-import-agents" ${records.length ? "" : "disabled"}>Impor ${records.length} agen</button></div>`,
     );
   } catch (error) {
     toast(readableError(error));
@@ -1117,5 +2371,81 @@ async function confirmAgentImport() {
   } finally {
     operationPending = false;
     document.body.classList.remove("saving");
+  }
+}
+
+async function previewScheduleImport() {
+  operationPending = true;
+  document.body.classList.add("saving");
+  const epoch = sessionEpoch;
+  try {
+    const raw = await repository.previewLegacySchedule();
+    if (!authorized || epoch !== sessionEpoch) return;
+    const matched = [];
+    for (const item of raw) {
+      const ag = state.agents.find(
+        (a) =>
+          a.name.toLocaleLowerCase("id") ===
+          item.agentName.toLocaleLowerCase("id"),
+      );
+      if (
+        ag &&
+        WORKDAYS.includes(item.day) &&
+        ["Pagi", "Siang"].includes(item.session)
+      ) {
+        matched.push({
+          agent: ag.id,
+          agentName: ag.name,
+          day: item.day,
+          session: item.session,
+          pj: item.pj,
+        });
+      }
+    }
+    legacySchedulePreview = matched;
+    openDialog(
+      "Impor Jadwal Master Lama",
+      "PRATINJAU JADWAL MINGGUAN",
+      `<p class="help">Ditemukan ${matched.length} jadwal mingguan dari tabel <code>jadwal_master</code> lama yang cocok dengan direktori agen saat ini.</p><div class="table-scroll"><table><thead><tr><th>HARI</th><th>SESI</th><th>AGEN</th><th>PERAN</th></tr></thead><tbody>${matched.map((m) => `<tr><td>${esc(m.day)}</td><td>${esc(m.session)}</td><td>${esc(m.agentName)}</td><td>${m.pj ? "PJ Sesi" : "Anggota"}</td></tr>`).join("")}</tbody></table></div><div class="dialog-footer"><button class="button" data-action="close">Batal</button><button class="button primary" data-action="confirm-import-schedule" ${matched.length ? "" : "disabled"}>Impor ${matched.length} jadwal</button></div>`,
+    );
+  } catch (error) {
+    toast(readableError(error));
+  } finally {
+    operationPending = false;
+    document.body.classList.remove("saving");
+  }
+}
+
+async function confirmScheduleImport() {
+  if (!legacySchedulePreview.length) return;
+  const toInsert = legacySchedulePreview.filter(
+    (m) =>
+      !(state.weeklySchedule || []).some(
+        (w) =>
+          w.agent === m.agent && w.day === m.day && w.session === m.session,
+      ),
+  );
+  legacySchedulePreview = [];
+  closeDialog();
+  if (!toInsert.length) {
+    toast("Semua jadwal lama sudah ada di Jadwal Master.");
+    return;
+  }
+  const mutators = toInsert.map((m) => (s) => {
+    s.weeklySchedule.push({
+      id: id(),
+      agent: m.agent,
+      day: m.day,
+      session: m.session,
+      pj: m.pj,
+    });
+  });
+  if (
+    await updateMany(
+      mutators,
+      `${toInsert.length} jadwal rutin berhasil diimpor.`,
+    )
+  ) {
+    renderAttendance();
   }
 }

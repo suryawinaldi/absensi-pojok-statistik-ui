@@ -28,7 +28,7 @@ class Backend:
         self.user = {'id': ADMIN, 'aud': 'authenticated', 'role': 'authenticated', 'email': 'admin@example.test', 'created_at':'2026-01-01T00:00:00Z','app_metadata':{},'user_metadata':{}}
         self.rows = {
             'ps_agents': [{'id':AGENT,'name':'Agen Integrasi','division':'Media Kreatif','position':'Anggota','active':True,'period':'2026 / 2027','photo_path':None,'version':1}],
-            'ps_shifts': [], 'ps_posts': []}
+            'ps_shifts': [], 'ps_posts': [], 'ps_weekly_schedule': [], 'ps_settings': []}
     def token(self):
         enc = lambda v: base64.urlsafe_b64encode(json.dumps(v).encode()).decode().rstrip('=')
         jwt = enc({'alg':'HS256'})+'.'+enc({'sub':ADMIN,'exp':int(time.time())+3600,'aud':'authenticated','role':'authenticated'})+'.'+base64.urlsafe_b64encode(b'fixture-signature').decode().rstrip('=')

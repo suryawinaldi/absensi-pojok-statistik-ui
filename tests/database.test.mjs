@@ -121,11 +121,34 @@ test("workspace migration and access policies on local PostgreSQL", async (t) =>
         /ps_arrival_matches_status/,
       );
       await db.query(
-        "update ps_shifts set status='Hadir',arrival_time='10:05'",
+        "update ps_shifts set status='Hadir',arrival_time='10:05',is_extra=true,fine_paid=true",
+      );
+      const updatedShift = (
+        await db.query("select version, is_extra, fine_paid from ps_shifts")
+      ).rows[0];
+      assert.equal(updatedShift.version, 2);
+      assert.equal(updatedShift.is_extra, true);
+      assert.equal(updatedShift.fine_paid, true);
+
+      // Weekly schedule & operational settings
+      await db.query(
+        "insert into ps_weekly_schedule(agent_id,day_name,session,is_pj) values ($1,'Senin','Pagi',true)",
+        [AGENT],
+      );
+      await assert.rejects(
+        db.query(
+          "insert into ps_weekly_schedule(agent_id,day_name,session) values ($1,'Senin','Pagi')",
+          [AGENT],
+        ),
+        /ps_weekly_once/,
+      );
+      await db.query(
+        "insert into ps_settings(late_tolerance_minutes,late_fine_amount,absent_fine_amount) values (15,5000,10000)",
       );
       assert.equal(
-        (await db.query("select version from ps_shifts")).rows[0].version,
-        2,
+        (await db.query("select late_fine_amount from ps_settings")).rows[0]
+          .late_fine_amount,
+        5000,
       );
     },
   );

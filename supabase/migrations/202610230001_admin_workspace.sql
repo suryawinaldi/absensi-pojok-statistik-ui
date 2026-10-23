@@ -33,6 +33,8 @@ create table public.ps_shifts (
   date date not null,
   session text not null check (session in ('Pagi','Siang')),
   is_pj boolean not null default false,
+  is_extra boolean not null default false,
+  fine_paid boolean not null default false,
   status text not null default 'Belum dicatat' check (status in ('Belum dicatat','Hadir','Izin','Sakit','Tidak hadir')),
   arrival_time time without time zone,
   version integer not null default 1,
@@ -45,6 +47,30 @@ create table public.ps_shifts (
   )
 );
 create index ps_shifts_date_idx on public.ps_shifts(date);
+
+create table public.ps_weekly_schedule (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null references public.ps_agents(id) on delete cascade,
+  day_name text not null check (day_name in ('Senin','Selasa','Rabu','Kamis','Jumat')),
+  session text not null check (session in ('Pagi','Siang')),
+  is_pj boolean not null default false,
+  version integer not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint ps_weekly_once unique (agent_id, day_name, session)
+);
+create index ps_weekly_schedule_day_idx on public.ps_weekly_schedule(day_name, session);
+
+create table public.ps_settings (
+  id uuid primary key default '00000000-0000-4000-8000-000000000001'::uuid check (id = '00000000-0000-4000-8000-000000000001'::uuid),
+  late_tolerance_minutes integer not null default 15 check (late_tolerance_minutes between 0 and 180),
+  late_fine_amount integer not null default 5000 check (late_fine_amount >= 0),
+  absent_fine_amount integer not null default 10000 check (absent_fine_amount >= 0),
+  operational_hours jsonb not null default '{}'::jsonb,
+  version integer not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
 create table public.ps_posts (
   id uuid primary key default gen_random_uuid(),
@@ -101,7 +127,7 @@ revoke all on function public.ps_prepare_update() from public;
 do $$
 declare t text;
 begin
-  foreach t in array array['ps_agents','ps_shifts','ps_posts'] loop
+  foreach t in array array['ps_agents','ps_shifts','ps_weekly_schedule','ps_settings','ps_posts'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon, authenticated', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

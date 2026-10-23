@@ -2,16 +2,53 @@ export const TABLES = {
   agents: "ps_agents",
   shifts: "ps_shifts",
   posts: "ps_posts",
+  weeklySchedule: "ps_weekly_schedule",
+  settings: "ps_settings",
 };
 export const BUCKET = "pojok-media";
-export const emptyState = () => ({ agents: [], shifts: [], posts: [] });
+export const SETTINGS_ID = "00000000-0000-4000-8000-000000000001";
+export const WORKDAYS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat"];
+
+export function defaultOperationalHours() {
+  return {
+    Senin: {
+      Pagi: { active: true, start: "10:00", end: "12:30" },
+      Siang: { active: true, start: "13:30", end: "16:00" },
+    },
+    Selasa: {
+      Pagi: { active: true, start: "10:00", end: "12:30" },
+      Siang: { active: true, start: "13:30", end: "16:00" },
+    },
+    Rabu: {
+      Pagi: { active: true, start: "10:00", end: "12:30" },
+      Siang: { active: true, start: "13:30", end: "16:00" },
+    },
+    Kamis: {
+      Pagi: { active: true, start: "10:00", end: "12:30" },
+      Siang: { active: true, start: "13:30", end: "16:00" },
+    },
+    Jumat: {
+      Pagi: { active: true, start: "10:00", end: "11:30" },
+      Siang: { active: true, start: "13:30", end: "15:30" },
+    },
+  };
+}
+
+export const emptyState = () => ({
+  agents: [],
+  shifts: [],
+  posts: [],
+  weeklySchedule: [],
+  settings: [],
+});
+
 export const isInlineImage = (value) =>
   typeof value === "string" &&
   /^data:image\/(jpeg|png|webp);base64,/.test(value);
 
 export function readableError(error) {
   if (error?.code === "23505")
-    return "Data sudah ada. Periksa penugasan pada tanggal dan sesi yang sama.";
+    return "Data sudah ada. Periksa penugasan pada hari/tanggal dan sesi yang sama.";
   if (error?.code === "23503")
     return "Data terkait sudah berubah. Muat ulang lalu coba lagi.";
   if (error?.code === "23514")
@@ -19,7 +56,7 @@ export function readableError(error) {
   if (error?.code === "42501")
     return "Akses ditolak. Masuk menggunakan akun admin yang telah diizinkan.";
   if (["42P01", "PGRST205", "PGRST202"].includes(error?.code))
-    return "Workspace belum diaktifkan di Supabase. Terapkan migrasi dan daftarkan akun admin terlebih dahulu.";
+    return "Tabel fitur baru belum diaktifkan di Supabase. Jalankan migrasi SQL terbaru di Supabase SQL Editor.";
   if (error?.code === "CONFLICT")
     return "Data ini telah berubah di perangkat lain. Muat ulang sebelum menyimpan lagi.";
   if (error?.code === "NOT_ADMIN")
@@ -34,8 +71,10 @@ export function readableError(error) {
 export function findChange(before, after) {
   const changes = [];
   for (const collection of Object.keys(TABLES)) {
-    const previous = new Map(before[collection].map((row) => [row.id, row]));
-    const next = new Map(after[collection].map((row) => [row.id, row]));
+    const prevList = before[collection] || [];
+    const nextList = after[collection] || [];
+    const previous = new Map(prevList.map((row) => [row.id, row]));
+    const next = new Map(nextList.map((row) => [row.id, row]));
     for (const [id, row] of next) {
       if (!previous.has(id))
         changes.push({ collection, kind: "insert", row, old: null });
@@ -64,6 +103,19 @@ function initials(name) {
     .map((n) => n[0].toUpperCase())
     .join("");
 }
+
+function mapLegacyPosition(name, isBph) {
+  const n = name.toLowerCase();
+  if (n.includes("taslim")) return "Ketua Agen";
+  if (n.includes("evan")) return "Wakil Ketua Agen";
+  if (n.includes("azka") || n.includes("tsabbita"))
+    return "Sekretaris & Bendahara";
+  if (n.includes("azmy")) return "Koordinator Media Kreatif";
+  if (n.includes("aslif") || n.includes("alif"))
+    return "Koordinator Analisis & Pelayanan";
+  return isBph ? "BPH" : "Anggota";
+}
+
 function rowToModel(collection, row, signed) {
   if (collection === "agents")
     return {
@@ -84,11 +136,44 @@ function rowToModel(collection, row, signed) {
       agent: row.agent_id,
       date: row.date,
       session: row.session,
-      pj: row.is_pj,
+      pj: Boolean(row.is_pj),
+      extra: Boolean(row.is_extra),
+      finePaid: Boolean(row.fine_paid),
       status: row.status,
       time: row.arrival_time?.slice(0, 5) || "",
       _version: row.version,
     };
+  if (collection === "weeklySchedule")
+    return {
+      id: row.id,
+      agent: row.agent_id,
+      day: row.day_name,
+      session: row.session,
+      pj: Boolean(row.is_pj),
+      _version: row.version,
+    };
+  if (collection === "settings") {
+    const baseHours = defaultOperationalHours();
+    const rawHours =
+      row.operational_hours && typeof row.operational_hours === "object"
+        ? row.operational_hours
+        : {};
+    const mergedHours = {};
+    for (const day of WORKDAYS) {
+      mergedHours[day] = {
+        Pagi: { ...baseHours[day].Pagi, ...(rawHours[day]?.Pagi || {}) },
+        Siang: { ...baseHours[day].Siang, ...(rawHours[day]?.Siang || {}) },
+      };
+    }
+    return {
+      id: row.id || SETTINGS_ID,
+      lateToleranceMinutes: Number(row.late_tolerance_minutes ?? 15),
+      lateFineAmount: Number(row.late_fine_amount ?? 5000),
+      absentFineAmount: Number(row.absent_fine_amount ?? 10000),
+      operationalHours: mergedHours,
+      _version: row.version,
+    };
+  }
   return {
     id: row.id,
     title: row.title,
@@ -138,7 +223,15 @@ export function createRepository(
         .select("*")
         .order("id")
         .range(start, start + 499);
-      if (error) throw error;
+      if (error) {
+        if (
+          ["ps_weekly_schedule", "ps_settings"].includes(table) &&
+          ["42P01", "PGRST205"].includes(error.code)
+        ) {
+          return [];
+        }
+        throw error;
+      }
       rows.push(...data);
       if (data.length < 500) return rows;
     }
@@ -259,32 +352,67 @@ export function createRepository(
           obsolete = (old?._imagePaths || []).filter(
             (path) => !imagePaths.includes(path),
           );
-        } else
+        } else if (collection === "weeklySchedule") {
+          payload = {
+            id: row.id,
+            agent_id: row.agent,
+            day_name: row.day,
+            session: row.session,
+            is_pj: Boolean(row.pj),
+          };
+        } else if (collection === "settings") {
+          payload = {
+            id: row.id || SETTINGS_ID,
+            late_tolerance_minutes: Number(row.lateToleranceMinutes ?? 15),
+            late_fine_amount: Number(row.lateFineAmount ?? 5000),
+            absent_fine_amount: Number(row.absentFineAmount ?? 10000),
+            operational_hours:
+              row.operationalHours || defaultOperationalHours(),
+          };
+        } else {
           payload = {
             id: row.id,
             agent_id: row.agent,
             date: row.date,
             session: row.session,
-            is_pj: row.pj,
+            is_pj: Boolean(row.pj),
             status: row.status,
             arrival_time: row.status === "Hadir" ? row.time : null,
           };
+          if (row.extra !== undefined) payload.is_extra = Boolean(row.extra);
+          if (row.finePaid !== undefined)
+            payload.fine_paid = Boolean(row.finePaid);
+        }
       }
-      let request;
-      if (kind === "insert") request = client.from(table).insert(payload);
-      if (kind === "update")
-        request = client
-          .from(table)
-          .update(payload)
-          .eq("id", old.id)
-          .eq("version", old._version);
-      if (kind === "delete")
-        request = client
-          .from(table)
-          .delete()
-          .eq("id", old.id)
-          .eq("version", old._version);
-      const { data, error } = await request.select("*").maybeSingle();
+      const executeWrite = async (bodyPayload) => {
+        let request;
+        if (kind === "insert") request = client.from(table).insert(bodyPayload);
+        if (kind === "update")
+          request = client
+            .from(table)
+            .update(bodyPayload)
+            .eq("id", old.id)
+            .eq("version", old._version);
+        if (kind === "delete")
+          request = client
+            .from(table)
+            .delete()
+            .eq("id", old.id)
+            .eq("version", old._version);
+        return await request.select("*").maybeSingle();
+      };
+      let { data, error } = await executeWrite(payload);
+      if (
+        error?.code === "PGRST204" &&
+        collection === "shifts" &&
+        payload &&
+        ("is_extra" in payload || "fine_paid" in payload)
+      ) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.is_extra;
+        delete fallbackPayload.fine_paid;
+        ({ data, error } = await executeWrite(fallbackPayload));
+      }
       if (error) throw error;
       if (!data) throw { code: "CONFLICT" };
       const result = structuredClone(after);
@@ -329,7 +457,7 @@ export function createRepository(
         legacy_id: String(row.id),
         name: row.nama.trim(),
         division: row.divisi.trim(),
-        position: row.is_bph ? "BPH" : "Anggota",
+        position: mapLegacyPosition(row.nama.trim(), row.is_bph),
       };
     });
   }
@@ -338,6 +466,17 @@ export function createRepository(
     if (error) throw error;
     return data;
   }
+  async function previewLegacySchedule() {
+    const rows = await fetchRows("jadwal_master");
+    return rows
+      .filter((r) => r.hari && r.sesi && r.nama_agen)
+      .map((r) => ({
+        day: r.hari.trim(),
+        session: r.sesi.trim(),
+        agentName: r.nama_agen.trim(),
+        pj: Boolean(r.is_pj),
+      }));
+  }
   return {
     requireAdmin,
     load,
@@ -345,5 +484,6 @@ export function createRepository(
     isSafeMedia,
     previewLegacyAgents,
     importLegacyAgents,
+    previewLegacySchedule,
   };
 }
