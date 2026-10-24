@@ -1,6 +1,6 @@
 # PRD — Operasional dan Apresiasi Agen Pojok Statistik UI
 
-Versi: 1.0, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
+Versi: 1.1, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
 
 ## 1. Ringkasan keputusan
 
@@ -23,7 +23,7 @@ Tinjauan awal memakai baseline `fbdcb35`. Saat penyusunan PRD, GitHub sudah memi
 - **Dinyatakan pengguna:** UI baru dipertahankan; hanya admin login; agen adalah data anggota; jadwal mingguan hari/sesi; dua sesi per hari; penugasan bisa digeser; bantuan sukarela dicatat; frekuensi dan durasi kontribusi ditampilkan; fitur workspace baru tetap ada.
 - **Referensi:** lampiran `implementation_plan.md`, kode legacy `js/app.js` dan `index.html`, serta implementasi workspace baru dan skema `ps_*`.
 - **Usulan dalam PRD:** versi jadwal per minggu, pemisahan pengganti vs sukarelawan, pembatasan estimasi durasi, kategori apresiasi, dan koreksi denda tanpa menghilangkan jejak pembayaran.
-- **Dikonfirmasi pengguna:** pola jadwal tetap berulang setiap minggu, dengan perubahan seperlunya.
+- **Dikonfirmasi pengguna:** pola jadwal tetap berulang setiap minggu, dengan perubahan seperlunya; toleransi dan tarif denda dapat diatur bertingkat; tidak hadir tanpa izin memiliki tarif tersendiri; izin yang dicatat admin selalu bebas denda.
 - **Belum ditetapkan organisasi:** pengecualian denda PJ; cara utama mencatat jam pulang; syarat penghargaan tunggal. Default usulan dijelaskan di bagian 13 dan tidak boleh dianggap keputusan pengguna.
 
 ## 2. Tujuan dan batas cakupan
@@ -217,22 +217,84 @@ Top 5 ringkas dan Top 10 sesi/durasi tetap tersedia. Grafik dapat diklik untuk m
 
 Total sesi dan total menit menjawab pertanyaan berbeda. Tidak menjumlahkan keduanya menjadi skor tanpa bobot yang disepakati. Kontribusi konten juga tidak langsung dicampurkan ke peringkat kehadiran.
 
-### F-07. Denda, koreksi, dan pembayaran
+### F-07. Denda fleksibel, koreksi, dan pembayaran
 
-Denda hanya dapat bersumber dari kewajiban reguler yang sah. Keterlambatan memakai jam mulai, toleransi, dan aturan yang berlaku saat sesi itu berlangsung.
+**Keputusan pengguna:** admin dapat menetapkan toleransi menit, beberapa tingkat keterlambatan dengan nominal berbeda, dan denda khusus tidak hadir tanpa izin. Status Izin yang dicatat/disahkan admin selalu bebas denda. Angka berikut hanya ilustrasi, bukan aturan final organisasi.
 
-- Terlambat jika jam hadir **lebih dari** awal sesi + toleransi. Tepat pada batas tidak terlambat.
-- Tidak hadir dikenai aturan ketidakhadiran ketika admin menutup/mengonfirmasi sesi, bukan saat masih Belum dicatat.
-- Sukarelawan, izin, dan sakit tidak dikenai denda dalam usulan default.
-- Pengecualian PJ merupakan kebijakan yang perlu dikonfirmasi; legacy mengecualikan PJ, tetapi status PJ tidak boleh menjadi pembebasan tersembunyi.
+#### F-07A. Pengaturan kebijakan
+
+Panel **Jam Operasional & Aturan → Kebijakan Denda** menyediakan:
+
+- Sakelar aktif/nonaktif denda keterlambatan dan denda ketidakhadiran secara terpisah. Menonaktifkan aturan baru tidak menghapus tagihan lama.
+- Toleransi keterlambatan bebas denda dalam menit.
+- Pilihan tarif **satu nominal setelah toleransi** atau **bertingkat menurut menit keterlambatan**.
+- Tambah/edit/hapus baris tingkatan. Admin tidak dibatasi hanya satu toleransi dan satu nominal.
+- Batas menit tiap tingkatan dan nominal rupiah total yang berlaku pada tingkatan tersebut.
+- Batas maksimal nominal denda telat, opsional; jika aktif diterapkan setelah penentuan tarif. Tidak otomatis membatasi denda ketidakhadiran yang mempunyai pengaturan sendiri.
+- Nominal khusus **Tidak hadir tanpa izin**, terpisah dari tarif telat.
+- Pengecualian PJ yang dapat ditetapkan secara eksplisit. Sukarelawan, izin, dan sakit yang disahkan tetap bebas denda.
+- Nama kebijakan, periode, tanggal mulai berlaku, dan cakupan hari/sesi.
+- Pratinjau/simulator sebelum publikasi: pilih sesi, jam datang, status, dan peran untuk melihat nominal serta alasan perhitungannya.
+
+Admin bisa memakai satu kebijakan untuk seluruh hari/sesi atau menetapkan kebijakan khusus pada slot tertentu. Contoh: Jumat pagi mempunyai toleransi berbeda, sedangkan sesi lain mengikuti kebijakan umum. Kebijakan khusus merupakan satu set aturan utuh, bukan campuran beberapa nominal yang dijumlahkan tanpa kejelasan.
+
+**Urutan penerapan:** periksa kewajiban dan status bebas denda terlebih dahulu; kemudian pilih kebijakan sesi pada tanggal pengecualian, kebijakan hari+sesi, kebijakan hari, atau kebijakan umum periode, dari yang paling spesifik. Pada tingkat yang sama tidak boleh ada dua kebijakan aktif dengan rentang waktu bertabrakan.
+
+#### F-07B. Tarif bertingkat dan batas waktu yang jelas
+
+Contoh kebijakan, sesi mulai 10.00 WIB dan toleransi 15 menit:
+
+| Keterlambatan sejak awal sesi                      | Waktu hadir contoh                           | Total denda telat                  |
+| -------------------------------------------------- | -------------------------------------------- | ---------------------------------- |
+| 0–15 menit                                         | Sampai 10.15                                 | Rp0                                |
+| Lebih dari 15 sampai 30 menit                      | 10.16–10.30                                  | Rp5.000                            |
+| Lebih dari 30 sampai 60 menit                      | 10.31–11.00                                  | Rp10.000                           |
+| Lebih dari 60 menit                                | Setelah 11.00, selama sesi masih berlangsung | Rp15.000                           |
+| Tidak hadir tanpa izin, setelah dikonfirmasi admin | Tidak ada kehadiran yang sah                 | Contoh Rp20.000, diatur tersendiri |
+
+- Ukuran menit dihitung sejak **jam mulai sesi**, bukan sejak akhir toleransi. Label input dan simulator wajib menjelaskan dasar ini.
+- Tepat pada batas toleransi bebas denda. Tepat pada batas atas suatu tingkatan masih memakai tarif tingkatan tersebut.
+- Nominal yang dipilih adalah **total pada satu tingkatan**, bukan akumulasi semua tingkatan sebelumnya. Datang 10.40 pada contoh di atas menghasilkan Rp10.000, bukan Rp15.000.
+- Batas harus berurutan, tidak boleh tumpang tindih atau mempunyai celah setelah toleransi. Tingkatan terakhir mencakup sisa keterlambatan dalam sesi.
+- Nilai toleransi/batas menit dan rupiah tidak boleh negatif. Toleransi yang menutupi seluruh sesi perlu peringatan dan konfirmasi karena tidak akan menghasilkan denda telat dalam sesi itu.
+- Mengubah toleransi menampilkan kembali rentang seluruh tingkatan untuk ditinjau. Jika batas lama menjadi tidak valid, publikasi ditolak sampai admin memperbaikinya; jangan diam-diam mengubah seluruh nominal atau batas lainnya.
+- Rilis awal menggunakan ketelitian menit sesuai input jam hadir. Jangan membulatkan diam-diam antarperangkat. Jika detik kemudian didukung, definisi pembulatan harus ditentukan sebelum aktivasi.
+- Datang setelah sesi selesai tidak otomatis dihitung sebagai hadir penuh atau dijumlahkan dengan denda bolos. Kejadian di luar sesi harus ditinjau admin untuk menetapkan status akhirnya sesuai F-04.
+
+**Kritik kebijakan:** bila tarif telat paling tinggi lebih besar daripada denda tidak hadir, sistem menampilkan peringatan karena berpotensi memberi insentif untuk tidak datang. Admin tetap menentukan kebijakan, tetapi konsekuensi tersebut harus terlihat sebelum disimpan.
+
+#### F-07C. Izin, ketidakhadiran, dan pengecualian
+
+| Kondisi                                                   | Perlakuan                                               |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| Hadir reguler dalam toleransi                             | Bebas denda                                             |
+| Hadir reguler melewati toleransi                          | Pilih satu tarif keterlambatan yang berlaku             |
+| Izin yang dicatat/disahkan admin                          | Selalu Rp0, tidak dapat ditimpa aturan telat/bolos      |
+| Sakit yang disahkan sebagai izin                          | Rp0                                                     |
+| Sukarelawan/ekstra                                        | Rp0; tidak datang sukarela bukan pelanggaran            |
+| PJ                                                        | Ikuti pengecualian PJ yang terlihat pada kebijakan sesi |
+| Belum dicatat                                             | Tidak otomatis menjadi bolos atau mendapat tagihan      |
+| Tidak hadir tanpa izin yang dikonfirmasi admin            | Tarif ketidakhadiran dari kebijakan sesi                |
+| Sesi libur/dibatalkan atau agen tidak mempunyai kewajiban | Tidak membentuk denda reguler                           |
+
+Tidak ada pendaftaran izin mandiri oleh agen: admin tetap menjadi satu-satunya pengguna. Catatan izin dapat mencakup alasan dan waktu pemberitahuan. Jika status yang semula Tidak hadir dikoreksi menjadi Izin yang sah, kewajiban dendanya dibatalkan sesuai alur koreksi, bukan tetap ditagihkan karena waktu pemberitahuannya. Catatan tambahan tidak boleh menjadi aturan tersembunyi untuk mendenda Izin.
+
+Satu kejadian tidak menerima denda telat dan denda tidak hadir sekaligus. Agen pengganti mengikuti kewajiban pengganti yang disahkan; kehadirannya tidak otomatis menghapus pelanggaran agen asal. Pengurangan/pembebasan khusus oleh admin memerlukan alasan dan audit, dengan nominal awal dan nominal akhir tetap dapat ditelusuri.
+
+#### F-07D. Perhitungan, riwayat, dan koreksi pembayaran
+
+- Perhitungan final dilakukan di server dari jam sesi, jenis kewajiban, status, jam hadir, dan versi kebijakan yang dibekukan untuk kejadian itu.
+- Simpan ID/versi kebijakan, tingkatan terpilih, menit terlambat, nominal dasar, pengecualian/penyesuaian, serta nominal akhir. Rincian alasan tersedia pada baris denda.
 - Denda merujuk ID kehadiran/sesi dan agen, bukan nama+tanggal saja. Sesi pagi dan siang tidak saling menghapus denda.
-- Koreksi kehadiran memperbarui/membatalkan kewajiban denda yang relevan secara atomik dan tercatat.
+- Perubahan aturan berlaku mulai tanggal yang dipilih. Mengganti toleransi atau tarif sekarang tidak menghitung ulang masa lalu secara otomatis.
+- Jika ada kebutuhan penyesuaian historis, admin meninjau daftar record terdampak dan alasan sebelum menjalankan koreksi eksplisit. Transaksi yang sudah dibayar tetap dijaga jejaknya.
+- Koreksi kehadiran memperbarui/membatalkan kewajiban denda secara atomik dan idempoten.
 - Denda belum dibayar yang tidak berlaku lagi diberi status dibatalkan, bukan dihapus tanpa jejak.
 - Denda sudah dibayar tidak otomatis hilang saat absensi dikoreksi. Catat koreksi dan tindak lanjut pengembalian/saldo sesuai keputusan admin; kas yang pernah diterima tetap dapat ditelusuri.
-- Pembayaran memiliki nominal, waktu, catatan, dan status; tidak cukup menjadikan boolean Lunas sebagai satu-satunya bukti.
+- Pembayaran memiliki nominal, waktu, catatan, dan status; boolean Lunas bukan satu-satunya bukti.
 - Cakupan awal adalah pembayaran penuh. Pembayaran parsial dan kas pengeluaran umum di luar cakupan awal.
 
-Tampilan Rekap Denda membedakan tagihan aktif, sudah dibayar, dibatalkan, dan pembayaran yang perlu penyesuaian. Mengubah nominal aturan hari ini tidak menghitung ulang seluruh utang masa lalu.
+Tampilan Rekap Denda membedakan tagihan aktif, sudah dibayar, dibatalkan, dan pembayaran yang perlu penyesuaian. Ekspor menyertakan versi kebijakan dan dasar nominal yang digunakan.
 
 ### F-08. Profil agen, konten, laporan, dan ekspor
 
@@ -265,7 +327,7 @@ Ini rancangan entitas, bukan instruksi langsung mengganti schema yang sudah berj
 | Periode                     | Kepengurusan dan batas pelaporan                                                          |
 | Pola mingguan + versi       | Hari, sesi, agen, PJ, urutan, minggu mulai berlaku                                        |
 | Pengecualian minggu/tanggal | Perubahan sementara terhadap pola aktif, cakupan waktu, alasan, status draf/berlaku       |
-| Aturan operasional + versi  | Jam per hari/sesi, toleransi, denda, pengecualian PJ, waktu berlaku                       |
+| Aturan operasional + versi  | Jam per hari/sesi, kebijakan bertingkat, pengecualian PJ, waktu berlaku                   |
 | Sesi aktual                 | Tanggal, sesi, snapshot waktu/aturan, status buka/tutup/libur                             |
 | Penugasan aktual            | Agen, sumber reguler/pengganti, PJ saat sesi, referensi jadwal asal                       |
 | Kehadiran/kontribusi        | Agen, sesi aktual, jenis kontribusi, status, jam hadir/pulang, sumber jam, alasan koreksi |
@@ -327,6 +389,21 @@ Snapshot bukan salinan seluruh data agen: identitas tetap ber-ID, sedangkan jam,
 | AC-23 | Pengecualian satu minggu telah berakhir                                   | Susunan kembali ke pola aktif; pengecualian tidak ikut berulang                                                    |
 | AC-24 | Periode kepengurusan berakhir                                             | Pola tidak terus membuat kewajiban baru di luar periode                                                            |
 
+### Penerimaan tambahan — denda fleksibel
+
+| ID    | Skenario                                                                      | Hasil yang wajib                                                                                  |
+| ----- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| AC-25 | Admin menetapkan toleransi 15 menit, tarif 5.000/10.000/15.000 seperti contoh | Jam 10.15 = 0; 10.30 = 5.000; 10.31 = 10.000; 11.01 = 15.000                                      |
+| AC-26 | Admin mengubah batas dan nominal atau menambah tingkatan                      | Simulator dan hitungan server memakai aturan yang sama; batas tidak valid ditolak                 |
+| AC-27 | Agen tercatat Izin meskipun sebelumnya dianggap terlambat/tidak hadir         | Nominal kewajiban akhir 0; jejak koreksi/pembayaran tetap ada                                     |
+| AC-28 | Admin menetapkan ketidakhadiran tanpa izin Rp20.000                           | Hanya status Tidak hadir yang disahkan mendapat tarif tersebut; Belum dicatat tetap tanpa tagihan |
+| AC-29 | Kebijakan khusus Jumat pagi berbeda dari kebijakan umum                       | Hanya sesi yang tercakup memakai aturan khusus; tidak ada penjumlahan dua kebijakan               |
+| AC-30 | Toleransi/tarif baru diaktifkan untuk minggu berikutnya                       | Rekap dan pembayaran minggu sebelumnya tidak berubah diam-diam                                    |
+| AC-31 | Denda keterlambatan dinonaktifkan, denda bolos tetap aktif                    | Agen hadir terlambat tidak ditagih; tidak hadir tanpa izin tetap mengikuti tarifnya               |
+| AC-32 | Agen terkena tingkat kedua dan tingkat pertama juga dilewati                  | Satu tagihan sebesar tarif tingkat kedua, bukan akumulasi dua tarif                               |
+| AC-33 | Hadir dikoreksi menjadi Tidak hadir atau sebaliknya                           | Tidak ada dua denda untuk kejadian sama; perhitungan/koreksi mengikuti status final               |
+| AC-34 | Tarif telat tertinggi melebihi denda tidak hadir                              | Peringatan konsekuensi tampil pada pratinjau sebelum publikasi                                    |
+
 ## 11. Prioritas dan urutan implementasi
 
 Semua kemampuan berikut termasuk target pemulihan operasional; urutannya bukan penghapusan kebutuhan.
@@ -334,7 +411,7 @@ Semua kemampuan berikut termasuk target pemulihan operasional; urutannya bukan p
 1. **Fondasi jadwal:** pola berulang otomatis, versi dan batas periode berlaku, jam operasional, pengecualian libur, dan snapshot sesi.
 2. **Operasi admin:** papan geser dan pindah alternatif, absensi dari jadwal, relawan/pengganti, bulk, koreksi dan durasi berlabel.
 3. **Apresiasi:** dashboard sesi/menit, rincian reguler–sukarela, filter periode, kategori penghargaan dan drill-down.
-4. **Denda dan laporan:** aturan yang disetujui, transaksi terkait sesi, pembayaran/koreksi, serta CSV.
+4. **Denda dan laporan:** toleransi dan tarif bertingkat yang dapat dikonfigurasi, pengecualian izin yang wajib, simulator, versi kebijakan, transaksi terkait sesi, pembayaran/koreksi, serta CSV.
 5. **Transisi:** migrasi/review riwayat, uji regresi fitur workspace, rekonsiliasi, dan aktivasi produksi.
 
 Pengujian model periode dan waktu dimulai di tahap 1; jangan menunggu tahap dashboard untuk memperbaiki definisi kontribusi. Dashboard operasional dapat dirilis bertahap, tetapi jangan menyatakan fitur legacy lengkap sebelum denda, ekspor, dan rekonsiliasi selesai.
@@ -351,14 +428,15 @@ Ukuran awal berupa kriteria teramati, bukan klaim angka hasil yang belum diukur:
 - Seluruh AC wajib lulus, termasuk regresi foto agen dan kalender konten.
 - Setelah digunakan, ukur waktu penyusunan minggu, jumlah koreksi salah klasifikasi, serta selisih rekonsiliasi; tetapkan target numerik dari baseline penggunaan nyata.
 
-## 13. Keputusan yang perlu disepakati
+## 13. Keputusan yang sudah disepakati dan yang masih perlu ditinjau
 
-| Pertanyaan                              | Default usulan PRD                                                            | Dampak                                                          |
-| --------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Susunan jadwal — sudah dikonfirmasi     | Tetap berulang setiap minggu; perubahan hanya bila diperlukan                 | Pola tersimpan berlaku otomatis, pengecualian bersifat opsional |
-| Haruskah jam pulang dicatat?            | Opsional pada rilis awal; ketiadaannya selalu berlabel estimasi               | Mengurangi beban admin tanpa mengklaim durasi presisi           |
-| PJ bebas denda?                         | Usulan kompatibilitas legacy: iya, terlihat sebagai kebijakan sampai ditinjau | Tidak dijadikan asumsi permanen tersembunyi                     |
-| Satu Star Agent atau beberapa kategori? | Beberapa kategori; pemenang tunggal menunggu aturan                           | Menjaga apresiasi sukarela dan kepatuhan tetap bermakna         |
-| Izin/sakit masuk denominator?           | Dikeluarkan dari kewajiban efektif; jumlahnya tetap ditampilkan               | Rasio transparan dan dapat diaudit                              |
+| Pertanyaan                              | Default usulan PRD                                                                               | Dampak                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Susunan jadwal — sudah dikonfirmasi     | Tetap berulang setiap minggu; perubahan hanya bila diperlukan                                    | Pola tersimpan berlaku otomatis, pengecualian bersifat opsional |
+| Aturan denda — sudah dikonfirmasi       | Toleransi dan nominal bertingkat dapat diedit; tarif bolos terpisah; izin sah selalu bebas denda | Konfigurasi fleksibel tidak boleh menimpa pengecualian izin     |
+| Haruskah jam pulang dicatat?            | Opsional pada rilis awal; ketiadaannya selalu berlabel estimasi                                  | Mengurangi beban admin tanpa mengklaim durasi presisi           |
+| PJ bebas denda?                         | Usulan kompatibilitas legacy: iya, terlihat sebagai kebijakan sampai ditinjau                    | Tidak dijadikan asumsi permanen tersembunyi                     |
+| Satu Star Agent atau beberapa kategori? | Beberapa kategori; pemenang tunggal menunggu aturan                                              | Menjaga apresiasi sukarela dan kepatuhan tetap bermakna         |
+| Izin/sakit masuk denominator?           | Dikeluarkan dari kewajiban efektif; jumlahnya tetap ditampilkan                                  | Rasio transparan dan dapat diaudit                              |
 
 Nominal denda, toleransi, jam sesi aktual, dan syarat penghargaan adalah konfigurasi organisasi; angka contoh di lampiran bukan nilai final yang otomatis diterapkan.
