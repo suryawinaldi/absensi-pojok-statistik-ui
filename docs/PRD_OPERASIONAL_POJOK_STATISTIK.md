@@ -1,0 +1,364 @@
+# PRD — Operasional dan Apresiasi Agen Pojok Statistik UI
+
+Versi: 1.0, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
+
+## 1. Ringkasan keputusan
+
+Pertahankan bahasa visual workspace baru, login satu admin, direktori berfoto, dan kalender editorial. Lengkapi kembali alur jaga yang belum terbawa: jadwal mingguan per hari/sesi, pemindahan penugasan dengan geser, jam operasional dinamis, kehadiran sukarela, analitik kontribusi, denda, dan ekspor.
+
+**Model operasional inti:** admin mengatur siapa bertugas pada hari dan sesi tertentu dalam satu minggu. Absensi pada tanggal aktual mengambil penugasan yang berlaku untuk minggu tersebut. Agen yang datang membantu di luar penugasannya dicatat sebagai sukarelawan dan memperoleh apresiasi tersendiri.
+
+**Keputusan pengguna:** susunan agen tetap berulang setiap minggu dan diubah hanya bila diperlukan. Admin menyusun pola satu kali, bukan membuat roster baru atau menekan publikasi setiap pergantian minggu.
+
+Jadwal mingguan menjadi cara utama mengatur penugasan. Tanggal tetap digunakan untuk bukti kehadiran, pengecualian hari libur, dan riwayat; admin tidak perlu memasukkan ulang setiap tanggal satu per satu.
+
+Dokumen ini merumuskan kebutuhan dan kriteria penerimaan, bukan laporan bahwa fitur tersebut sudah tersedia. Tidak ada perubahan aplikasi/database yang dilakukan sebagai bagian dari penyusunan PRD ini.
+
+### Catatan versi kode yang ditinjau
+
+Tinjauan awal memakai baseline `fbdcb35`. Saat penyusunan PRD, GitHub sudah memiliki commit baru `e1ed911` yang memulihkan fitur operasional. Checkout diselaraskan tanpa mengubah implementasi tersebut. Karena itu, daftar kesenjangan awal di bawah adalah latar belakang; tabel status terbaru membedakan fitur yang sudah ada dalam kode dari aturan produk yang masih perlu dipenuhi. Keberadaan kode tidak membuktikan migrasi sudah diterapkan atau alur telah berjalan pada produksi.
+
+### Dasar kebutuhan dan status keputusan
+
+- **Dinyatakan pengguna:** UI baru dipertahankan; hanya admin login; agen adalah data anggota; jadwal mingguan hari/sesi; dua sesi per hari; penugasan bisa digeser; bantuan sukarela dicatat; frekuensi dan durasi kontribusi ditampilkan; fitur workspace baru tetap ada.
+- **Referensi:** lampiran `implementation_plan.md`, kode legacy `js/app.js` dan `index.html`, serta implementasi workspace baru dan skema `ps_*`.
+- **Usulan dalam PRD:** versi jadwal per minggu, pemisahan pengganti vs sukarelawan, pembatasan estimasi durasi, kategori apresiasi, dan koreksi denda tanpa menghilangkan jejak pembayaran.
+- **Dikonfirmasi pengguna:** pola jadwal tetap berulang setiap minggu, dengan perubahan seperlunya.
+- **Belum ditetapkan organisasi:** pengecualian denda PJ; cara utama mencatat jam pulang; syarat penghargaan tunggal. Default usulan dijelaskan di bagian 13 dan tidak boleh dianggap keputusan pengguna.
+
+## 2. Tujuan dan batas cakupan
+
+### Tujuan
+
+1. Admin cukup mengatur satu pola hari × sesi yang berlaku berulang, tanpa input tanggal atau penyiapan ulang setiap minggu.
+2. Perubahan penugasan mudah dilakukan tanpa mengubah fakta kehadiran yang sudah tercatat.
+3. Agen yang membantu secara sukarela mendapat kredit yang terlihat dan dapat dijelaskan.
+4. Pengurus dapat membedakan kepatuhan jadwal, jumlah kontribusi, dan lamanya kontribusi.
+5. Data jadwal, absensi, aturan, denda, dan dashboard konsisten.
+6. Direktori berfoto dan pengelolaan konten tetap terintegrasi dalam UI baru.
+
+### Bukan cakupan rilis ini
+
+Akun per agen, absensi mandiri, GPS/biometrik, publikasi Instagram otomatis, alokasi jadwal otomatis oleh AI, sistem akuntansi kas umum, dan pemindaian QR. Penentuan rotasi otomatis A/B atau beberapa siklus minggu dapat ditambahkan setelah pola organisasi dipastikan.
+
+### Pengguna
+
+Satu akun admin dapat digunakan untuk mengelola seluruh anggota. Agen tidak memiliki kredensial. Keanggotaan, divisi, jabatan organisasi, dan peran PJ sesi adalah data berbeda. Jabatan tidak ditentukan dengan pencocokan nama dalam kode. Penggunaan satu akun berarti audit mengidentifikasi akun admin, bukan membuktikan individu pengurus yang sedang menggunakan akun tersebut.
+
+## 3. Kesenjangan dan kritik terhadap rancangan sebelumnya
+
+| Area                | Temuan                                                                                                       | Perbaikan produk                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Jadwal baru         | `ps_shifts` berfokus pada penugasan bertanggal                                                               | Tambahkan pola mingguan dan jadwal yang berlaku untuk minggu tertentu                                 |
+| Pergantian minggu   | Lampiran hanya memiliki hari/sesi tanpa versi atau minggu berlaku                                            | Tambahkan minggu efektif, salin minggu sebelumnya, dan perlindungan riwayat                           |
+| Geser penugasan     | SortableJS dimuat di legacy, tetapi inisialisasi drag aktif tidak ditemukan pada checkout yang diperiksa     | Jadikan geser kebutuhan eksplisit; jangan menganggap dependensi terpasang berarti fitur sudah bekerja |
+| Jam operasional     | Workspace menampilkan label jam tetap                                                                        | Konfigurasi per hari/sesi dan pengecualian tanggal                                                    |
+| Sukarelawan         | Legacy menggunakan parameter ekstra saat pencatatan, tetapi insert absensinya tidak menyimpan penanda ekstra | Simpan jenis kontribusi secara permanen; jangan menebaknya ulang dari jadwal terkini                  |
+| Penghargaan bulanan | Label bulanan pada legacy tidak disertai filter bulan pada pengambilan data                                  | Terapkan periode yang sama pada seluruh perhitungan penghargaan                                       |
+| Durasi              | Legacy menghitung selisih jam hadir sampai akhir sesi                                                        | Bedakan estimasi dengan durasi berdasarkan jam pulang; batasi durasi pada jendela sesi                |
+| Peringkat           | Jumlah hadir dipengaruhi banyaknya penugasan                                                                 | Pisahkan frekuensi kontribusi, rasio kehadiran reguler, dan bantuan sukarela                          |
+| Denda               | Pembatalan legacy dapat menghapus berdasarkan nama dan tanggal                                               | Hubungkan denda ke kehadiran/sesi yang tepat; jangan menghapus pembayaran sesi lain                   |
+| Hadirkan semua      | Legacy memicu klik tombol berulang dengan jeda                                                               | Gunakan operasi server berbasis data dan hasil yang dapat diverifikasi                                |
+
+Lampiran sudah tepat tentang lima kelompok fitur yang hilang. Namun, klaim durasi “presisi”, pemberian satu sesi penuh tanpa batas waktu, penghapusan denda otomatis, dan penetapan pemenang tunggal memerlukan koreksi agar statistik dan kas tidak menyesatkan.
+
+### Status implementasi terbaru — commit `e1ed911`
+
+| Area            | Sudah terlihat di kode                                                      | Kritik / kebutuhan lanjutan                                                                                                             |
+| --------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Jadwal mingguan | `ps_weekly_schedule`, papan hari/sesi, drag native dan tombol Pindah        | Belum ada versi efektif, batas periode, atau pengecualian mingguan yang menjaga sejarah                                                 |
+| Jam operasional | `ps_settings`, jam mulai/selesai dan aktif per sesi                         | `getSessionConfig` membaca pengaturan aktif untuk tanggal lama juga; perlu snapshot                                                     |
+| Ekstra          | Penanda `is_extra`, tambah sukarelawan, statistik ekstra                    | Perlu membedakan pengganti, melindungi klasifikasi saat koreksi, dan memvalidasi kontribusi di luar jam                                 |
+| Durasi          | `calcShiftDuration` menghitung akhir sesi dikurangi jam datang              | Belum memakai jam pulang; kedatangan sebelum sesi menambah menit; wajib label estimasi dan pembatasan jendela sesi                      |
+| Dashboard       | Peringkat, grafik frekuensi/durasi, filter bulan berjalan/semua, sertifikat | Perlu filter bulan historis/rentang, rasio kewajiban, kategori sukarela, dan dasar penghargaan yang jelas                               |
+| Denda           | `calcShiftFine` serta boolean `fine_paid`                                   | Nominal dihitung ulang dari aturan aktif; pembayaran belum menjadi catatan nominal/waktu yang terpisah                                  |
+| Aksi massal     | `Hadirkan semua`, `updateMany`                                              | Pengisian otomatis memakai jam awal sesi dan penulisan berurutan; rawan menghilangkan keterlambatan serta menyimpan sebagian saat gagal |
+| Impor profil    | Pemetaan jabatan legacy kembali mencocokkan nama di repository              | Jabatan perlu ditinjau dan disimpan sebagai data, bukan ditebak dari substring nama                                                     |
+| Migrasi         | Ada migrasi operasional tambahan `202610230002`                             | Perlu inventarisasi kondisi database aktual sebelum rilis/migrasi lanjutan; jangan mengedit migrasi lama yang sudah diterapkan          |
+
+Kesimpulan tinjauan: banyak fitur dasar sudah dipulihkan pada kode terbaru. Fokus PRD adalah memastikan kesesuaian dengan pola berulang yang dipakai organisasi, keakuratan statistik, perlindungan riwayat, dan pengujian alur nyata. Jangan menulis ulang fitur yang sudah memenuhi kebutuhan; lakukan analisis selisih terhadap kriteria penerimaan.
+
+## 4. Istilah dan aturan dasar
+
+| Istilah            | Definisi                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| Periode organisasi | Kepengurusan/semester yang menjadi konteks jadwal dan laporan                          |
+| Pola mingguan      | Susunan hari aktif dan dua sesi yang dapat digunakan berulang                          |
+| Minggu jaga        | Rentang Senin–Minggu yang ditampilkan dengan tanggal awal–akhir                        |
+| Jadwal berlaku     | Versi susunan agen untuk minggu tertentu, termasuk perubahan yang sudah dipublikasikan |
+| Sesi aktual        | Kejadian satu sesi pada satu tanggal, dengan jam dan aturan yang dibekukan             |
+| Reguler            | Agen yang mendapat kewajiban pada sesi aktual tersebut                                 |
+| Sukarelawan/ekstra | Agen tanpa kewajiban pada sesi itu yang datang membantu                                |
+| Pengganti          | Agen yang secara eksplisit mengambil alih penugasan agen lain                          |
+| Belum dicatat      | Belum ada keputusan kehadiran, bukan otomatis tidak hadir                              |
+| Estimasi menit     | Perkiraan kontribusi sampai akhir sesi tanpa bukti jam pulang                          |
+
+Default hari adalah Senin–Jumat, masing-masing Pagi dan Siang. Setiap hari/sesi dapat diliburkan. Semua waktu operasional menggunakan Asia/Jakarta; waktu pencatatan sistem dan pelaku disimpan terpisah dari waktu kejadian yang diinput admin.
+
+Sukarelawan ditentukan per sesi: agen reguler pada Senin pagi tetap dapat menjadi sukarelawan Senin siang. Satu agen tidak boleh dihitung dua kali pada sesi aktual yang sama.
+
+## 5. Kebutuhan fitur
+
+### F-01. Jadwal mingguan dan rotasi
+
+**Tampilan:** pemilih minggu, periode aktif, papan lima hari × dua sesi, waktu sesi, agen berfoto/inisial, label PJ, dan jumlah penugasan. Tersedia daftar agen untuk menambahkan penugasan.
+
+**Kemampuan wajib:**
+
+- Pola aktif otomatis berulang pada minggu berikutnya selama periode dan masa berlakunya belum berakhir. Tidak perlu menyalin atau mempublikasikan ulang setiap minggu.
+- Menyalin pola tersedia saat menyiapkan periode baru atau variasi, bukan kewajiban operasional mingguan.
+- Memilih minggu sebelumnya/berikutnya dan melihat tanggal aktual di judul kolom hari.
+- Memindahkan agen antarhari/sesi dengan drag-and-drop; mengurutkan kartu dalam sesi.
+- Membedakan aksi **pindah** dengan **tambahkan penugasan lain**. Menyalin kartu tidak boleh terjadi tanpa tindakan eksplisit.
+- Alternatif tombol “Pindahkan ke…” untuk keyboard, pembaca layar, dan perangkat sentuh.
+- Menambah, menghapus, dan mengubah peran PJ tanpa mengganti jabatan organisasi agen.
+- Mendeteksi agen ganda dalam slot yang sama, sesi nonaktif, dan bentrok jam pada tanggal yang sama. Tidak melarang agen berjaga dua sesi yang tidak bertabrakan.
+- Menampilkan ringkasan jumlah penugasan per agen untuk membantu pemerataan; tidak merotasi agen atau mengubah pembagian secara otomatis.
+- Memisahkan perubahan draf dari jadwal yang sudah berlaku. Admin meninjau daftar perubahan lalu mempublikasikan.
+- Saat mempublikasikan, memilih **minggu ini saja** atau **jadikan pola mulai minggu ini**. Tidak mengubah minggu yang sudah dikunci.
+- Gagal menyimpan atau konflik versi tidak boleh terlihat sebagai perpindahan yang berhasil.
+
+**Pola utama yang disepakati:** susunan yang telah dipublikasikan otomatis berlaku berulang. Bila ada perubahan, admin memilih pengecualian untuk minggu/tanggal tertentu atau versi pola baru mulai minggu tertentu. Perubahan tetap bukan rotasi otomatis; bila pengecualian berakhir, sistem kembali memakai pola yang berlaku. Jadwal berulang juga mempunyai periode/tanggal akhir agar tidak menciptakan kewajiban tanpa batas setelah kepengurusan selesai.
+
+**Contoh:** admin membuka minggu 26–30 Oktober, memindahkan Agen A dari Senin pagi ke Selasa siang untuk minggu itu. Jadwal minggu sebelumnya dan absensi Agen A pada minggu sebelumnya tidak berubah.
+
+### F-02. Jam operasional dan pengecualian
+
+- Aktif/libur, mulai, dan selesai dapat diatur per hari dan sesi; Jumat boleh berbeda dari hari lain.
+- Mulai harus sebelum selesai. Dua sesi hari yang sama tidak boleh bertumpang tindih. Sesi lintas tengah malam di luar cakupan awal.
+- Toleransi keterlambatan dan nominal denda tidak boleh negatif.
+- Libur tanggal tertentu dapat menimpa pola hari biasa; alasan dan rentang tanggal terlihat.
+- Perubahan jam/aturan memiliki waktu berlaku. Jam sesi yang sudah dipakai dalam absensi tidak berubah diam-diam.
+- Hari yang seluruh sesinya libur tidak membentuk kewajiban atau denda.
+- Membuka sesi pengecualian pada hari libur memerlukan tindakan admin dengan jam dan alasan yang eksplisit; bukan menambahkan sukarelawan ke sesi yang tertutup.
+
+### F-03. Absensi harian otomatis
+
+Tanggal digunakan pada halaman absensi untuk memilih kejadian aktual. Daftar petugas dimuat otomatis dari jadwal yang berlaku pada minggu dan hari itu, bukan dengan membaca pola terbaru untuk seluruh sejarah.
+
+Setiap baris menampilkan agen, peran, asal penugasan, status, jam hadir/pulang, jenis durasi, dan indikasi denda. Jenis kontribusi dan status kehadiran disimpan terpisah.
+
+**Status:** Belum dicatat, Hadir, Izin, Sakit, Tidak hadir, dan Dibatalkan untuk jejak koreksi. Keterlambatan adalah atribut terhitung, bukan pengganti Hadir.
+
+- Tombol cepat Hadir mengisi jam WIB sekarang untuk hari ini; admin dapat mengoreksi dengan alasan.
+- Untuk tanggal lampau, admin wajib memasukkan jam kejadian, bukan memakai jam sekarang secara otomatis.
+- “Tidak hadir” ditetapkan admin; melewati jam mulai tidak otomatis membuktikan seseorang bolos.
+- Jam pulang dapat dicatat atau dikoreksi oleh admin. Jam pulang sebelum jam hadir ditolak.
+- Perubahan setelah sesi ditutup memerlukan alasan dan tercatat pada audit.
+- Hadirkan semua berlaku pada sesi yang dipilih, hanya untuk agen reguler berstatus Belum dicatat. Tampilkan pratinjau nama, jumlah, serta jam yang akan digunakan.
+- Bulk tidak menimpa Izin/Sakit/Hadir, tidak memasukkan sukarelawan otomatis, dan tidak mengisi jam pulang fiktif.
+- Bulk dijalankan sebagai satu operasi atomik/idempoten; tombol ganda tidak menambah kehadiran atau denda ganda.
+
+### F-04. Sukarelawan dan agen pengganti
+
+Tombol **Tambah sukarelawan** memilih agen aktif yang belum tercatat pada sesi tersebut. Admin mengisi sesi, jam datang, opsional jam pulang, dan catatan bantuan.
+
+- Penanda sukarelawan tersimpan permanen, walaupun pola mingguan diubah kemudian.
+- Sukarelawan bebas denda keterlambatan maupun ketidakhadiran untuk sesi sukarela itu. Tidak datang membantu bukan pelanggaran.
+- Kehadiran sukarela masuk total kontribusi dan kategori apresiasi ekstra.
+- Satu agen pada satu sesi hanya memiliki satu rekaman kontribusi aktif. Reguler yang datang tidak didaftarkan lagi sebagai ekstra.
+- Bantuan sukarela tidak menghapus kewajiban reguler atau ketidakhadiran agen lain.
+- Jika memang menggantikan petugas, gunakan aksi **Tetapkan pengganti**. Tautkan pengganti dengan penugasan asal dan alasan; keputusan status petugas asal harus eksplisit.
+- Saat bantuan dibatalkan karena salah input, kontribusinya tidak lagi dihitung tetapi jejak koreksi tetap tersedia.
+- Kedatangan pada/setelah akhir sesi tidak otomatis menghasilkan satu sesi kontribusi bernilai penuh. Tandai di luar jam; kontribusi tambahan memerlukan sesi/jam pengecualian yang disahkan admin.
+
+**Contoh:** Agen B tidak mendapat jadwal Rabu siang, tetapi membantu pukul 14.15–15.00. Ia tampil sebagai Sukarelawan, memperoleh kontribusi 45 menit terverifikasi, tidak dikenai denda, dan tidak mengubah status petugas reguler Rabu siang.
+
+### F-05. Durasi yang dapat dijelaskan
+
+Jendela sesi adalah jam mulai–selesai yang dibekukan untuk tanggal tersebut. Definisi berikut berlaku untuk kontribusi dalam sesi; kerja di luar jam memiliki pengecualian tersendiri.
+
+```text
+akhir_hitung = jam_pulang, jika tercatat; jika tidak, akhir_sesi
+menit = max(0, min(akhir_hitung, akhir_sesi) - max(jam_hadir, awal_sesi))
+```
+
+| Situasi                                         | Perlakuan                                                                        |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| Hadir dan jam pulang valid dicatat admin        | Durasi tercatat/terverifikasi admin                                              |
+| Hadir tanpa jam pulang                          | Estimasi sampai akhir sesi; label estimasi wajib                                 |
+| Datang lebih awal                               | Tidak memperoleh menit tambahan sebelum awal sesi tanpa persetujuan jam tambahan |
+| Datang setelah sesi selesai                     | Nol menit dalam sesi; periksa apakah perlu sesi pengecualian                     |
+| Izin/Sakit/Tidak hadir/Belum dicatat/Dibatalkan | Nol menit kontribusi                                                             |
+
+“Terverifikasi” berarti dicatat/dikonfirmasi admin, bukan verifikasi lokasi atau bukti biometrik. Dashboard menampilkan menit terverifikasi dan estimasi secara terpisah; bila digabung, labelnya “termasuk estimasi”. Sesi yang belum selesai tidak dipresentasikan sebagai durasi aktual yang sudah dikerjakan.
+
+Contoh sesi 10.00–12.30: hadir 09.30 tanpa pulang → estimasi 150 menit, bukan 180; hadir 10.30 tanpa pulang → estimasi 120 menit; hadir 10.30 dan pulang 11.30 → 60 menit tercatat.
+
+Riwayat legacy yang tidak memiliki jam pulang tetap diberi label estimasi. Tidak boleh membuat jam pulang palsu saat migrasi. Kunjungan terpisah/keluar-masuk berulang dalam satu sesi belum didukung pada rilis awal; jika dibutuhkan, diperlukan pencatatan interval terpisah.
+
+### F-06. Dashboard, analitik, dan apresiasi
+
+Pertahankan beranda operasional workspace baru: jadwal hari ini, tindak lanjut, dan agenda konten. Tambahkan ringkasan kontribusi serta apresiasi yang ringkas. Grafik lengkap tersedia melalui “Lihat analitik” agar beranda tidak penuh kartu dan grafik yang berulang.
+
+**Filter bersama:** bulan berjalan, bulan lain, rentang tanggal, periode kepengurusan, dan semua periode. Judul penghargaan harus mengikuti filter. Semua perhitungan memakai kehadiran valid dalam rentang WIB yang sama.
+
+| Metrik                | Definisi                                                                       |
+| --------------------- | ------------------------------------------------------------------------------ |
+| Sesi reguler hadir    | Sesi kewajiban dengan status Hadir dan kontribusi dalam jendela sesi           |
+| Sesi bantuan sukarela | Sesi ekstra dengan kehadiran valid dan kontribusi positif                      |
+| Total sesi kontribusi | Gabungan sesi hadir valid, termasuk pengganti; unik per agen/sesi aktual       |
+| Menit kontribusi      | Durasi menurut F-05, dengan pemisahan estimasi vs terverifikasi                |
+| Rasio hadir reguler   | Reguler hadir / kewajiban reguler yang sudah ditutup; denominator ditampilkan  |
+| Ketepatan waktu       | Reguler hadir tepat waktu / reguler hadir; sukarelawan tidak masuk denominator |
+
+Izin/sakit yang disetujui dikeluarkan dari denominator kewajiban efektif dalam usulan default, tetapi jumlahnya tetap ditampilkan. Penugasan masa depan dan hari libur tidak masuk denominator. Nilai tanpa kewajiban ditampilkan “—”, bukan 100%. Pilihan kebijakan denominator harus tertulis dan berlaku konsisten.
+
+**Apresiasi yang disarankan:**
+
+1. **Kontributor terbanyak:** jumlah sesi kontribusi, dengan rincian reguler, sukarela, dan pengganti.
+2. **Kontribusi sukarela:** sesi serta menit ekstra secara khusus agar inisiatif membantu terlihat.
+3. **Konsistensi jaga:** rasio pemenuhan kewajiban, selalu disertai jumlah penugasan; agen 1/1 tidak otomatis dianggap lebih berprestasi daripada 10/10.
+4. **Durasi kontribusi:** total menit, dengan status sumber perhitungan terlihat.
+
+Top 5 ringkas dan Top 10 sesi/durasi tetap tersedia. Grafik dapat diklik untuk melihat sesi penyusunnya. Nilai seri diberi peringkat bersama; jangan membuat pemenang tersembunyi berdasarkan urutan nama atau nilai denda.
+
+**Star Agent of the Month:** kartu apresiasi dapat dipertahankan, tetapi metrik dasarnya tertulis dan memakai bulan yang benar. Rekomendasi awal adalah menampilkan pemenang per kategori, bukan skor gabungan yang belum disepakati. Jika organisasi tetap menginginkan satu pemenang, aturan dan pemutus seri harus diputuskan sebelum fitur itu aktif. Tidak menerbitkan sertifikat dengan klaim durasi aktual dari data estimasi.
+
+Total sesi dan total menit menjawab pertanyaan berbeda. Tidak menjumlahkan keduanya menjadi skor tanpa bobot yang disepakati. Kontribusi konten juga tidak langsung dicampurkan ke peringkat kehadiran.
+
+### F-07. Denda, koreksi, dan pembayaran
+
+Denda hanya dapat bersumber dari kewajiban reguler yang sah. Keterlambatan memakai jam mulai, toleransi, dan aturan yang berlaku saat sesi itu berlangsung.
+
+- Terlambat jika jam hadir **lebih dari** awal sesi + toleransi. Tepat pada batas tidak terlambat.
+- Tidak hadir dikenai aturan ketidakhadiran ketika admin menutup/mengonfirmasi sesi, bukan saat masih Belum dicatat.
+- Sukarelawan, izin, dan sakit tidak dikenai denda dalam usulan default.
+- Pengecualian PJ merupakan kebijakan yang perlu dikonfirmasi; legacy mengecualikan PJ, tetapi status PJ tidak boleh menjadi pembebasan tersembunyi.
+- Denda merujuk ID kehadiran/sesi dan agen, bukan nama+tanggal saja. Sesi pagi dan siang tidak saling menghapus denda.
+- Koreksi kehadiran memperbarui/membatalkan kewajiban denda yang relevan secara atomik dan tercatat.
+- Denda belum dibayar yang tidak berlaku lagi diberi status dibatalkan, bukan dihapus tanpa jejak.
+- Denda sudah dibayar tidak otomatis hilang saat absensi dikoreksi. Catat koreksi dan tindak lanjut pengembalian/saldo sesuai keputusan admin; kas yang pernah diterima tetap dapat ditelusuri.
+- Pembayaran memiliki nominal, waktu, catatan, dan status; tidak cukup menjadikan boolean Lunas sebagai satu-satunya bukti.
+- Cakupan awal adalah pembayaran penuh. Pembayaran parsial dan kas pengeluaran umum di luar cakupan awal.
+
+Tampilan Rekap Denda membedakan tagihan aktif, sudah dibayar, dibatalkan, dan pembayaran yang perlu penyesuaian. Mengubah nominal aturan hari ini tidak menghitung ulang seluruh utang masa lalu.
+
+### F-08. Profil agen, konten, laporan, dan ekspor
+
+**Pertahankan:** direktori berfoto, filter, edit jabatan/divisi, impor agen ber-ID, media privat, kalender editorial, PIC, brief, caption, materi gambar, status, dan pencatatan tautan Instagram. PIC konten adalah agen, bukan akun login tambahan.
+
+**Tambahkan di profil:** jadwal reguler minggu ini, kehadiran reguler, kontribusi ekstra, menit terverifikasi/estimasi, serta akses riwayat sesuai filter. Menonaktifkan agen tidak menghapus riwayat; penugasan mendatangnya ditinjau admin.
+
+**Ekspor CSV:** daftar agen, jadwal mingguan, kehadiran, kontribusi, dan denda menurut filter aktif. Sertakan periode, zona waktu, jenis kontribusi, waktu datang/pulang, sumber durasi, dan status denda/pembayaran yang relevan. Format harus tetap terbaca di spreadsheet; nilai yang berpotensi menjadi formula diperlakukan sebagai teks.
+
+## 6. Navigasi dan penjagaan kualitas UI
+
+| Area               | Struktur                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| Beranda            | Ringkasan hari ini, tindakan admin, agenda konten, apresiasi ringkas, tautan analitik |
+| Jadwal & Kehadiran | Tab Jadwal Mingguan, Absensi Harian, Jam Operasional & Aturan                         |
+| Direktori Agen     | Profil, foto, peran organisasi, ringkasan kontribusi                                  |
+| Konten & Publikasi | Kalender/daftar, editor konten, PIC, materi, review                                   |
+| Rekap Denda        | Tagihan, pembayaran, koreksi, filter dan ekspor                                       |
+
+Analitik lengkap dibuka dari Beranda tanpa memadatkan layar awal. Pada ponsel, navigasi bawah memakai label pendek; Rekap Denda/Pengaturan dapat berada dalam Lainnya jika lima menu membuat teks sulit dibaca.
+
+Papan mingguan desktop memperlihatkan sepuluh slot. Ponsel memakai pemilih hari atau daftar sesi, dengan aksi pindah yang mudah ditekan. Drag bukan satu-satunya cara mengubah jadwal. Pertahankan warna, tipografi, ruang, dan komponen workspace baru, sambil memperbaiki kebutuhan aksesibilitas bila diperlukan; “pertahankan UI” tidak berarti membekukan setiap piksel.
+
+## 7. Model data konseptual
+
+Ini rancangan entitas, bukan instruksi langsung mengganti schema yang sudah berjalan.
+
+| Entitas                     | Tanggung jawab                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| Periode                     | Kepengurusan dan batas pelaporan                                                          |
+| Pola mingguan + versi       | Hari, sesi, agen, PJ, urutan, minggu mulai berlaku                                        |
+| Pengecualian minggu/tanggal | Perubahan sementara terhadap pola aktif, cakupan waktu, alasan, status draf/berlaku       |
+| Aturan operasional + versi  | Jam per hari/sesi, toleransi, denda, pengecualian PJ, waktu berlaku                       |
+| Sesi aktual                 | Tanggal, sesi, snapshot waktu/aturan, status buka/tutup/libur                             |
+| Penugasan aktual            | Agen, sumber reguler/pengganti, PJ saat sesi, referensi jadwal asal                       |
+| Kehadiran/kontribusi        | Agen, sesi aktual, jenis kontribusi, status, jam hadir/pulang, sumber jam, alasan koreksi |
+| Denda                       | Kehadiran asal, jenis, aturan saat terjadi, nominal, status koreksi                       |
+| Pembayaran                  | Denda asal, nominal, waktu, catatan, koreksi bila ada                                     |
+| Audit                       | Perubahan jadwal, aturan, kehadiran, dan transaksi oleh akun admin                        |
+
+**Invariant wajib:** unik agen–sesi aktual, versi jadwal tidak mengubah sejarah, penanda ekstra tersimpan, tidak ada durasi negatif, tidak ada denda ganda untuk kejadian yang sama, serta setiap pembayaran dapat ditelusuri. `ps_shifts` saat ini memuat penugasan dan status kehadiran; perlu migrasi bertahap untuk memisahkan tanggung jawabnya. Jangan langsung menambahkan semua field denda/pembayaran ke satu baris shift.
+
+Snapshot bukan salinan seluruh data agen: identitas tetap ber-ID, sedangkan jam, aturan, peran sesi, dan sumber kewajiban disimpan sesuai fakta saat kejadian. Koreksi historis tetap mungkin melalui alur koreksi yang diaudit.
+
+## 8. Integritas, keamanan, dan waktu
+
+- Pertahankan Supabase Auth dan RLS admin tunggal pada tabel baru, fungsi server, serta Storage. Jangan mengganti otorisasi dengan flag localStorage.
+- Operasi bulk, perpindahan yang memengaruhi beberapa penugasan, dan perubahan absensi+denda memakai transaksi server serta pemeriksaan versi.
+- Pengulangan request tidak menciptakan data ganda; kegagalan tidak ditampilkan sebagai sukses.
+- WIB digunakan secara konsisten. Jangan membuat tanggal absensi dengan pemotongan UTC yang dapat menggeser hari lokal.
+- Jam server digunakan untuk waktu pencatatan. Input waktu kejadian historis diperbolehkan dengan alasan; ini bukan klaim sistem anti-kecurangan berbasis jam browser.
+- Agregasi laporan di database mencakup seluruh hasil filter, bukan hanya halaman pertama hasil API.
+- Pilihan tanggal untuk absensi dan publikasi tetap dipertahankan; perubahan utama ada pada cara menyusun kewajiban mingguan.
+
+## 9. Strategi transisi data
+
+1. Inventarisasi tabel legacy dan `ps_*`, cek jumlah record, kelengkapan ID, peran, jam, serta kebijakan akses.
+2. Buat pemetaan agen berdasarkan ID sumber; nama duplikat ditinjau, bukan digabung otomatis.
+3. Migrasikan jadwal legacy sebagai pola dasar dengan tanggal mulai berlaku yang dinyatakan admin; jangan menebak pola untuk semua minggu masa lalu.
+4. Pertahankan data bertanggal yang sudah dibuat di workspace sebagai pengecualian/penugasan eksplisit, setelah ditinjau.
+5. Absensi lama tanpa penanda ekstra yang andal diberi status asal kontribusi “belum terklasifikasi”. Admin dapat memverifikasi berdasarkan bukti jadwal historis. Jangan memberi label sukarela hanya karena nama tidak ada pada pola hari ini.
+6. Jam pulang tidak diisi secara fiktif; durasi lama tetap estimasi jika dasar waktunya tersedia. Jika jam akhir historis tidak diketahui, nyatakan tidak dapat dihitung, bukan gunakan jam sekarang.
+7. Cocokkan denda dan pembayaran per sesi. Record lama yang hanya mempunyai nama+tanggal masuk daftar pengecualian untuk peninjauan.
+8. Uji di staging, rekonsiliasi per periode dan per agen, lalu lakukan cutover operasional. Simpan pemetaan dan jalur pemulihan; jangan hapus tabel lama setelah impor pertama.
+
+## 10. Kriteria penerimaan
+
+| ID    | Skenario                                                                  | Hasil yang wajib                                                                                                   |
+| ----- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| AC-01 | Salin minggu lalu lalu pindahkan A dari Senin pagi ke Rabu siang          | Minggu terpilih berubah; minggu lalu dan riwayatnya tetap                                                          |
+| AC-02 | Minggu berganti tanpa perubahan pola                                      | Daftar reguler terbentuk otomatis; admin tidak menyalin, mempublikasikan ulang, atau mengisi tanggal satu per satu |
+| AC-03 | Coba menambahkan A dua kali pada hari/sesi sama                           | Ditolak; tidak menambah sesi kontribusi                                                                            |
+| AC-04 | Perubahan pola setelah kehadiran lama tercatat                            | Jenis kontribusi, jam, PJ, dan aturan lama tetap sesuai snapshot                                                   |
+| AC-05 | B reguler Senin pagi membantu sukarela Senin siang                        | Dua sesi berbeda; siang berlabel sukarelawan, tanpa denda ekstra                                                   |
+| AC-06 | B membantu sesi A yang tidak hadir                                        | A tidak otomatis dianggap hadir/izin; kewajibannya tetap ditinjau                                                  |
+| AC-07 | Relawan datang 14.15 dan pulang 15.00                                     | Kontribusi 45 menit tercatat dan masuk kategori sukarela                                                           |
+| AC-08 | Sesi 10.00–12.30; datang 09.30 tanpa jam pulang                           | Estimasi 150 menit, tidak diklaim terverifikasi                                                                    |
+| AC-09 | Datang 12.45 untuk sesi yang selesai 12.30                                | Nol menit; tidak otomatis mendapatkan satu sesi apresiasi                                                          |
+| AC-10 | Jumat memakai jam berbeda atau tanggal diliburkan                         | Absensi dan durasi memakai aturan hari itu; libur tidak menciptakan denda                                          |
+| AC-11 | Hadirkan semua saat satu agen sudah Izin                                  | Hanya Belum dicatat pada sesi terpilih berubah; Izin tetap                                                         |
+| AC-12 | Request bulk atau pencatatan dikirim dua kali                             | Kehadiran dan denda tetap satu, hasil konsisten                                                                    |
+| AC-13 | Filter apresiasi bulan Oktober                                            | Semua pembilang, denominator, grafik, dan judul memakai Oktober WIB                                                |
+| AC-14 | Agen 1/1 dan agen 10/10 sama-sama hadir penuh                             | Keduanya 100%; jumlah penugasan terlihat dan tidak disembunyikan                                                   |
+| AC-15 | Absen pagi dikoreksi sementara denda siang ada                            | Hanya denda terkait pagi berubah                                                                                   |
+| AC-16 | Denda sudah lunas lalu kehadiran dikoreksi menjadi izin                   | Tagihan dikoreksi; penerimaan pembayaran dan jejak koreksi tetap ada                                               |
+| AC-17 | Agen dinonaktifkan                                                        | Tidak muncul untuk penugasan baru; statistik historis tetap                                                        |
+| AC-18 | Pengguna tanpa akses admin memanggil endpoint langsung                    | Ditolak oleh server/RLS, bukan hanya disembunyikan UI                                                              |
+| AC-19 | Koneksi gagal saat kartu digeser/disimpan                                 | Tidak ada sukses palsu; draf/pemulihan jelas                                                                       |
+| AC-20 | Operasi jadwal di ponsel atau keyboard tanpa drag                         | Tetap dapat memindahkan agen dengan kontrol alternatif                                                             |
+| AC-21 | Direktori, unggah foto, dan kalender konten setelah penambahan fitur jaga | Alur yang sudah ada tetap berjalan                                                                                 |
+| AC-22 | Ekspor dengan filter periode/divisi tertentu                              | Jumlah dan total cocok dengan tampilan serta sumber data yang sama                                                 |
+| AC-23 | Pengecualian satu minggu telah berakhir                                   | Susunan kembali ke pola aktif; pengecualian tidak ikut berulang                                                    |
+| AC-24 | Periode kepengurusan berakhir                                             | Pola tidak terus membuat kewajiban baru di luar periode                                                            |
+
+## 11. Prioritas dan urutan implementasi
+
+Semua kemampuan berikut termasuk target pemulihan operasional; urutannya bukan penghapusan kebutuhan.
+
+1. **Fondasi jadwal:** pola berulang otomatis, versi dan batas periode berlaku, jam operasional, pengecualian libur, dan snapshot sesi.
+2. **Operasi admin:** papan geser dan pindah alternatif, absensi dari jadwal, relawan/pengganti, bulk, koreksi dan durasi berlabel.
+3. **Apresiasi:** dashboard sesi/menit, rincian reguler–sukarela, filter periode, kategori penghargaan dan drill-down.
+4. **Denda dan laporan:** aturan yang disetujui, transaksi terkait sesi, pembayaran/koreksi, serta CSV.
+5. **Transisi:** migrasi/review riwayat, uji regresi fitur workspace, rekonsiliasi, dan aktivasi produksi.
+
+Pengujian model periode dan waktu dimulai di tahap 1; jangan menunggu tahap dashboard untuk memperbaiki definisi kontribusi. Dashboard operasional dapat dirilis bertahap, tetapi jangan menyatakan fitur legacy lengkap sebelum denda, ekspor, dan rekonsiliasi selesai.
+
+## 12. Ukuran keberhasilan
+
+Ukuran awal berupa kriteria teramati, bukan klaim angka hasil yang belum diukur:
+
+- Pola yang sudah disimpan otomatis tersedia minggu berikutnya tanpa salin, publikasi ulang, atau pembuatan sepuluh tanggal/sesi manual.
+- Pengecualian sementara tidak mengubah pola normal pada minggu berikutnya.
+- Setiap bantuan sukarela yang valid muncul pada profil dan laporan periode yang benar.
+- Total pada grafik dapat ditelusuri ke record kehadiran dan sama dengan ekspor.
+- Perubahan pola baru tidak mengubah total laporan yang sudah ditutup tanpa koreksi eksplisit.
+- Seluruh AC wajib lulus, termasuk regresi foto agen dan kalender konten.
+- Setelah digunakan, ukur waktu penyusunan minggu, jumlah koreksi salah klasifikasi, serta selisih rekonsiliasi; tetapkan target numerik dari baseline penggunaan nyata.
+
+## 13. Keputusan yang perlu disepakati
+
+| Pertanyaan                              | Default usulan PRD                                                            | Dampak                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Susunan jadwal — sudah dikonfirmasi     | Tetap berulang setiap minggu; perubahan hanya bila diperlukan                 | Pola tersimpan berlaku otomatis, pengecualian bersifat opsional |
+| Haruskah jam pulang dicatat?            | Opsional pada rilis awal; ketiadaannya selalu berlabel estimasi               | Mengurangi beban admin tanpa mengklaim durasi presisi           |
+| PJ bebas denda?                         | Usulan kompatibilitas legacy: iya, terlihat sebagai kebijakan sampai ditinjau | Tidak dijadikan asumsi permanen tersembunyi                     |
+| Satu Star Agent atau beberapa kategori? | Beberapa kategori; pemenang tunggal menunggu aturan                           | Menjaga apresiasi sukarela dan kepatuhan tetap bermakna         |
+| Izin/sakit masuk denominator?           | Dikeluarkan dari kewajiban efektif; jumlahnya tetap ditampilkan               | Rasio transparan dan dapat diaudit                              |
+
+Nominal denda, toleransi, jam sesi aktual, dan syarat penghargaan adalah konfigurasi organisasi; angka contoh di lampiran bukan nilai final yang otomatis diterapkan.
