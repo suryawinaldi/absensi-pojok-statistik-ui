@@ -1,4 +1,10 @@
-import { divisionChoices, divisionRank } from "./agent-divisions.js";
+import { divisionChoices } from "./agent-divisions.js";
+import {
+  directoryAgents,
+  positionChoices,
+  isCoreDivision,
+} from "./agent-directory.js";
+import { enhanceAgentPickers } from "./agent-picker.js";
 import {
   durationMinutes,
   contribution,
@@ -124,6 +130,8 @@ let legacySchedulePreview = [];
 let page = "beranda",
   agentSearch = "",
   divisionFilter = "",
+  agentRoleFilter = "",
+  agentSort = "division",
   contentFilter = "",
   calendarMonth = BASE,
   calendarView = window.matchMedia("(max-width: 720px)").matches
@@ -650,20 +658,12 @@ function showCertificate(agentId) {
 }
 
 function agentCards() {
-  const q = agentSearch.toLocaleLowerCase("id");
-  return state.agents
-    .filter(
-      (a) =>
-        (!divisionFilter || a.division === divisionFilter) &&
-        `${a.name} ${a.position} ${a.division}`
-          .toLocaleLowerCase("id")
-          .includes(q),
-    )
-    .sort(
-      (a, b) =>
-        divisionRank(a.division) - divisionRank(b.division) ||
-        a.name.localeCompare(b.name, "id"),
-    );
+  return directoryAgents(state.agents, {
+    query: agentSearch,
+    division: divisionFilter,
+    role: agentRoleFilter,
+    sort: agentSort,
+  });
 }
 function renderAgents() {
   main.innerHTML =
@@ -673,20 +673,21 @@ function renderAgents() {
       "Seluruh agen Pojok Statistik UI, beserta peran dan kontribusinya.",
       `<button class="button" data-action="import-agents">Impor agen lama</button><button class="button primary" data-action="new-agent">${icon("plus")}Tambah agen</button>`,
     ) +
-    `<div class="toolbar"><div class="filters"><label class="search-field">${icon("search")}<input class="input" id="agent-search" type="search" placeholder="Cari nama atau jabatan..." aria-label="Cari agen" value="${esc(agentSearch)}"></label><select id="division-filter" aria-label="Filter divisi"><option value="">Semua divisi</option>${availableDivisions()
+    `<div class="toolbar"><div class="filters"><label class="search-field">${icon("search")}<input class="input" id="agent-search" type="search" placeholder="Ketik nama, misalnya su…" aria-label="Cari agen" value="${esc(agentSearch)}"></label><select id="division-filter" aria-label="Filter divisi"><option value="">Semua divisi</option>${availableDivisions()
       .map(
         (d) =>
           `<option ${divisionFilter === d ? "selected" : ""}>${esc(d)}</option>`,
       )
       .join(
         "",
-      )}</select></div><span class="result-count" id="agent-count"></span></div><div class="agent-grid" id="agent-grid"></div>`;
+      )}</select><select id="agent-role-filter" aria-label="Filter jabatan"><option value="">Semua jabatan</option><option value="pi" ${agentRoleFilter === "pi" ? "selected" : ""}>Pengurus Inti</option><option value="bph" ${agentRoleFilter === "bph" ? "selected" : ""}>BPH</option><option value="anggota" ${agentRoleFilter === "anggota" ? "selected" : ""}>Anggota</option><option value="other" ${agentRoleFilter === "other" ? "selected" : ""}>Jabatan lain</option></select><select id="agent-sort" aria-label="Urutkan agen"><option value="division" ${agentSort === "division" ? "selected" : ""}>Divisi & jabatan</option><option value="name-asc" ${agentSort === "name-asc" ? "selected" : ""}>Nama A–Z</option><option value="name-desc" ${agentSort === "name-desc" ? "selected" : ""}>Nama Z–A</option></select></div><span class="result-count" id="agent-count" aria-live="polite"></span></div><p class="directory-help">Cari potongan nama di bagian mana pun. Edit nama, divisi, dan jabatan melalui tombol Edit profil.</p><div class="agent-grid" id="agent-grid"></div>`;
   renderAgentCards();
 }
 function renderAgentCards() {
   const list = agentCards();
   document.querySelector("#agent-count").textContent =
     `${list.length} dari ${state.agents.length} agen`;
+  let previousDivision = null;
   document.querySelector("#agent-grid").innerHTML =
     list
       .map((a) => {
@@ -696,7 +697,15 @@ function renderAgentCards() {
         const attendedCount = state.shifts.filter(
           (s) => s.agent === a.id && s.status === "Hadir" && !s.extra,
         ).length;
-        return `<button class="agent-card ${a.division === "Pengurus Inti" ? "pi-card" : ""}" data-action="agent" data-id="${esc(a.id)}"><span class="agent-card-top">${avatar(a)}${badge(a.active ? "Aktif" : "Nonaktif")}</span><h2>${esc(a.name)}</h2><p>${esc(a.position)}</p><span class="division-label ${a.division === "Pengurus Inti" ? "pi-badge" : ""}">${esc(a.division)}</span><span class="agent-card-bottom"><span>${weeklyCount ? `${weeklyCount} jadwal rutin · ` : ""}${attendedCount} sesi reguler</span>${icon("arrow")}</span></button>`;
+        let heading = "";
+        if (agentSort === "division" && a.division !== previousDivision) {
+          previousDivision = a.division;
+          const count = list.filter(
+            (item) => item.division === a.division,
+          ).length;
+          heading = `<div class="directory-group-heading"><h2>${esc(a.division)}</h2><span>${count} agen</span></div>`;
+        }
+        return `${heading}<article class="agent-card ${isCoreDivision(a.division) ? "pi-card" : ""}"><button type="button" class="agent-card-profile" data-action="agent" data-id="${esc(a.id)}"><span class="agent-card-top">${avatar(a)}${badge(a.active ? "Aktif" : "Nonaktif")}</span><h2>${esc(a.name)}</h2><p>${esc(a.position)}</p><span class="division-label ${isCoreDivision(a.division) ? "pi-badge" : ""}">${esc(a.division)}</span><span class="agent-card-bottom"><span>${weeklyCount ? `${weeklyCount} jadwal rutin · ` : ""}${attendedCount} sesi reguler</span>${icon("arrow")}</span></button><div class="agent-card-actions"><button type="button" class="text-button" data-action="edit-agent" data-id="${esc(a.id)}" aria-label="Edit profil ${esc(a.name)}">${icon("edit")}Edit profil</button></div></article>`;
       })
       .join("") ||
     '<div class="empty">Tidak ada agen yang sesuai. Coba nama atau divisi lain.</div>';
@@ -1081,10 +1090,11 @@ function openDialog(title, eyebrow, body) {
     if (control && titleEl)
       control.setAttribute("aria-label", titleEl.textContent);
     if (control && help) {
-      help.id = `field-help-${index}`;
+      if (!help.id) help.id = `field-help-${index}`;
       control.setAttribute("aria-describedby", help.id);
     }
   });
+  enhanceAgentPickers(dialog, state.agents);
   if (!dialog.open) dialog.showModal();
   dialog.scrollTop = 0;
 }
@@ -1123,10 +1133,40 @@ function options(values, current) {
     .join("");
 }
 function agentOptions(current) {
-  return state.agents
+  return (
+    (!current ? '<option value="" selected disabled>Pilih agen</option>' : "") +
+    state.agents
+      .filter((a) => a.active || a.id === current)
+      .map(
+        (a) =>
+          `<option value="${esc(a.id)}" ${a.id === current ? "selected" : ""}>${esc(a.name)}</option>`,
+      )
+      .join("")
+  );
+}
+function positionSuggestions(division, current = "") {
+  return positionChoices(division, current)
+    .map((position) => `<option value="${esc(position)}"></option>`)
+    .join("");
+}
+function updatePositionSuggestions() {
+  const form = document.querySelector("#agent-form");
+  if (!form) return;
+  const division = form.elements.division.value;
+  const current = form.elements.position.value;
+  form.querySelector("#position-options").innerHTML = positionSuggestions(
+    division,
+    current,
+  );
+  form.querySelector("#position-help").textContent = isCoreDivision(division)
+    ? "Pilih saran jabatan Pengurus Inti atau ketik jabatan sendiri. Nama dan jabatan dapat diedit."
+    : "Pilih BPH atau Anggota. Jabatan khusus yang sudah ada tetap dapat disunting.";
+  form.querySelector("#position-shortcuts").innerHTML = positionChoices(
+    division,
+  )
     .map(
-      (a) =>
-        `<option value="${esc(a.id)}" ${a.id === current ? "selected" : ""}>${esc(a.name)}</option>`,
+      (position) =>
+        `<button type="button" class="position-shortcut" data-action="set-agent-position" data-position="${esc(position)}">${esc(position)}</button>`,
     )
     .join("");
 }
@@ -1140,8 +1180,9 @@ function editAgent(agentId) {
   openDialog(
     agentId ? "Edit profil agen" : "Tambah agen",
     "DIREKTORI AGEN",
-    `<form id="agent-form" data-id="${esc(agentId || "")}"><label class="form-field"><span>Nama lengkap</span><input class="input" name="name" required maxlength="80" value="${esc(a.name)}" placeholder="Nama lengkap agen"></label><label class="form-field"><span>Divisi</span><select name="division" required><option value="">Pilih divisi</option>${options(availableDivisions(a.division), a.division)}</select></label><label class="form-field"><span>Jabatan</span><input class="input" name="position" required maxlength="60" value="${esc(a.position)}"></label><label class="form-field"><span>Status</span><select name="active"><option value="true" ${a.active ? "selected" : ""}>Aktif</option><option value="false" ${!a.active ? "selected" : ""}>Nonaktif</option></select></label><p class="profile-note">Menambahkan agen hanya membuat profil anggota. Tidak ada akun atau kredensial yang dibuat.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan profil</button></div></form>`,
+    `<form id="agent-form" data-id="${esc(agentId || "")}"><label class="form-field"><span>Nama lengkap</span><input class="input" name="name" required maxlength="80" value="${esc(a.name)}" placeholder="Nama lengkap agen"></label><label class="form-field"><span>Divisi</span><select name="division" required><option value="">Pilih divisi</option>${options(availableDivisions(a.division), a.division)}</select></label><label class="form-field"><span>Jabatan</span><input class="input" name="position" list="position-options" autocomplete="off" required maxlength="60" value="${esc(a.position)}"><datalist id="position-options">${positionSuggestions(a.division, a.position)}</datalist><small class="help" id="position-help"></small></label><label class="form-field"><span>Status</span><select name="active"><option value="true" ${a.active ? "selected" : ""}>Aktif</option><option value="false" ${!a.active ? "selected" : ""}>Nonaktif</option></select></label><div id="position-shortcuts" class="position-shortcuts" aria-label="Saran jabatan"></div><p class="profile-note">Menambahkan agen hanya membuat profil anggota. Tidak ada akun atau kredensial yang dibuat.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan profil</button></div></form>`,
   );
+  updatePositionSuggestions();
 }
 function showPost(postId) {
   const p = state.posts.find((x) => x.id === postId);
@@ -1170,7 +1211,7 @@ function editPost(postId, date) {
     time: "19:00",
     format: "Carousel",
     status: "Ide",
-    agent: state.agents[0]?.id || "",
+    agent: "",
     category: "",
     brief: "",
     caption: "",
@@ -1408,6 +1449,14 @@ document.addEventListener("click", async (e) => {
   const action = button.dataset.action,
     recordId = button.dataset.id;
   switch (action) {
+    case "set-agent-position": {
+      const field = document.querySelector('#agent-form [name="position"]');
+      if (field) {
+        field.value = button.dataset.position;
+        field.focus();
+      }
+      break;
+    }
     case "import-agents":
       await previewAgentImport();
       break;
@@ -1782,7 +1831,17 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", async (e) => {
   const el = e.target;
+  if (el.name === "division" && el.closest("#agent-form"))
+    updatePositionSuggestions();
   switch (el.id) {
+    case "agent-sort":
+      agentSort = el.value;
+      renderAgentCards();
+      break;
+    case "agent-role-filter":
+      agentRoleFilter = el.value;
+      renderAgentCards();
+      break;
     case "division-filter":
       divisionFilter = el.value;
       renderAgentCards();

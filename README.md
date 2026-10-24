@@ -43,6 +43,12 @@ Di Direktori Agen, gunakan **Impor agen lama**. Aplikasi membaca tabel `agen`, m
 
 Impor merupakan satu transaksi dan dibatasi 500 profil per permintaan. Data tidak lengkap membatalkan operasi. Akun admin perlu hak baca pada tabel lama; bila kebijakan lama menolak akses, tinjau kebijakan tersebut sebagai pemilik database, jangan menonaktifkan RLS. Jabatan awal berasal dari flag BPH dan dapat diedit. Jadwal mingguan, absensi, dan denda lama belum dimigrasikan karena memerlukan pemetaan tanggal dan ID agen yang ditinjau terlebih dahulu.
 
+## Direktori dan pemilihan agen
+
+Direktori mendukung edit nama/divisi/jabatan dari setiap kartu, kelompok divisi, filter jabatan, serta urutan nama A–Z/Z–A. Pengurus Inti memiliki saran jabatan yang dapat diedit; divisi lainnya menawarkan BPH/Anggota. Nama jabatan khusus yang sudah ada tetap dipertahankan.
+
+Ketik potongan nama seperti `su` untuk menemukan nama yang mengandungnya. Pada form jadwal, sukarelawan, dan konten, ketik lalu pilih hasil pencarian (nama, divisi, jabatan). Arrow Up/Down dan Enter juga dapat digunakan. Sistem menyimpan ID agen; mengganti nama tidak memutus riwayat. Tidak perlu migrasi database baru untuk fitur direktori ini.
+
 ## Perilaku data
 
 - Login username diverifikasi melalui `/api/admin-login` di server Vercel, kemudian SDK Supabase menyimpan sesi. Password tidak disimpan di source atau environment variable.

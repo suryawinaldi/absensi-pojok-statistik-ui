@@ -2253,7 +2253,9 @@ body.saving .nav-item {
   border-radius: 10px;
   background: #fafcfb;
   padding: 12px;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 .master-slot.slot-inactive {
   opacity: 0.65;
@@ -2634,3 +2636,134 @@ body.saving .nav-item {
   }
 }
 
+/* Directory: readable groups, direct edits, and searchable ID-based selectors. */
+.directory-help {
+  font-size: 11px;
+  color: var(--muted);
+  margin: -8px 0 20px;
+}
+.directory-group-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 0 0;
+}
+.directory-group-heading h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.directory-group-heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.agent-card-profile {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+.agent-card-actions {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.agent-card-actions .text-button {
+  min-height: 32px;
+}
+.position-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 8px 0 18px;
+}
+.position-shortcut {
+  border: 1px solid #dce6db;
+  background: #f5f8f1;
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 11px;
+  text-align: left;
+}
+.position-shortcut:hover {
+  background: #e7f0df;
+}
+.agent-picker {
+  position: relative;
+  min-width: 0;
+}
+.agent-picker-input {
+  width: 100%;
+}
+.agent-picker-options {
+  list-style: none;
+  padding: 5px;
+  margin: 4px 0 0;
+  position: absolute;
+  inset-inline: 0;
+  z-index: 15;
+  background: white;
+  border: 1px solid #cddbd0;
+  border-radius: 7px;
+  box-shadow: 0 8px 25px #17392c18;
+  max-height: min(250px, 40dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.agent-picker-options [role="option"] {
+  padding: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  min-height: 48px;
+}
+.agent-picker-options [role="option"] strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+.agent-picker-options [role="option"] span {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.agent-picker-options [role="option"]:hover,
+.agent-picker-options [aria-selected="true"] {
+  background: #eef5e7;
+}
+.picker-empty {
+  font-size: 11px;
+  padding: 14px 10px;
+  color: var(--muted);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 720px) {
+  #main .filters #agent-sort,
+  #main .filters #agent-role-filter,
+  #main .filters #division-filter {
+    flex: 1 1 130px;
+    min-width: 0;
+    max-width: none;
+  }
+  #main .filters .search-field {
+    flex-basis: 100%;
+  }
+  .agent-card-actions .text-button {
+    font-size: 11px;
+  }
+}

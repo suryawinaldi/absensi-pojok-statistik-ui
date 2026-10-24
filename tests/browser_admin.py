@@ -92,6 +92,11 @@ class Backend:
             respond(copy.deepcopy(row))
         else:raise AssertionError('Unexpected request: '+method+' '+path)
 
+def choose_agent(page,label,name):
+    field=page.get_by_role('combobox',name=label,exact=True)
+    field.fill(name)
+    page.locator('.agent-picker-options').get_by_role('option').filter(has_text=name).click()
+
 def login(page,password='fixture-password'):
     page.get_by_label('Username admin').fill('adminpojokui')
     page.get_by_label('Password',exact=True).fill(password)
@@ -149,7 +154,7 @@ with sync_playwright() as p:
     expect(page.locator('.agent-card img')).to_be_visible()
     page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
     page.get_by_role('button',name='Agen ekstra',exact=True).click()
-    page.get_by_label('Pilih agen sukarelawan').select_option(AGENT)
+    choose_agent(page,'Pilih agen sukarelawan','Agen Integrasi')
     page.get_by_label('Jam hadir (WIB)',exact=True).fill('11:15')
     page.get_by_role('button',name='Catat hadir ekstra').click()
     expect(page.locator('dialog')).to_be_hidden()
@@ -159,7 +164,7 @@ with sync_playwright() as p:
     expect(page.get_by_role('heading',name='Top 10 frekuensi jaga reguler')).to_be_visible()
     page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
     page.get_by_role('button',name='Tambah penugasan').click()
-    page.get_by_label('Agen',exact=True).select_option(backend.rows['ps_agents'][-1]['id'])
+    choose_agent(page,'Agen','Agen Tersimpan')
     page.get_by_role('button',name='Simpan penugasan').click()
     expect(page.locator('tr').filter(has_text='Agen Tersimpan').get_by_role('button',name='Catat',exact=True)).to_be_visible()
     page.locator('tr').filter(has_text='Agen Tersimpan').get_by_role('button',name='Catat',exact=True).click()
@@ -169,7 +174,7 @@ with sync_playwright() as p:
     expect(page.locator('tbody')).to_contain_text('10:07')
     assert backend.rows['ps_shifts'][1]['arrival_time']=='10:07'
     page.get_by_role('button',name='Agen ekstra',exact=True).click()
-    page.get_by_label('Pilih agen sukarelawan').select_option(backend.rows['ps_agents'][-1]['id'])
+    choose_agent(page,'Pilih agen sukarelawan','Agen Tersimpan')
     page.get_by_role('button',name='Catat hadir ekstra').click()
     expect(page.locator('#toast')).to_contain_text('bertugas reguler')
     assert len(backend.rows['ps_shifts'])==2
@@ -178,6 +183,7 @@ with sync_playwright() as p:
     page.get_by_role('link',name='Konten & Publikasi').click()
     page.get_by_role('button',name='Buat konten',exact=True).click()
     page.get_by_label('Judul konten').fill('Konten Integrasi')
+    choose_agent(page,'Penanggung jawab','Agen Integrasi')
     page.get_by_label('Caption',exact=True).fill('Caption dari admin.')
     page.get_by_label('Gambar / slide carousel').set_input_files({'name':'slide.png','mimeType':'image/png','buffer':PNG})
     expect(page.locator('#draft-images img')).to_be_visible()
@@ -204,6 +210,85 @@ with sync_playwright() as p:
         expect(page.locator('dialog')).to_be_hidden()
         expect(page.get_by_role('heading',name='Agen Lama',exact=True)).to_be_visible()
     assert len(backend.rows['ps_agents'])==3
+    # PI presets remain editable. Other divisions offer BPH and Anggota.
+    for name,division,position in [('Surya Utama','Pengurus Inti','Ketua Agen Pojok Statistik'),('Nadia Suci','Media Kreatif','BPH'),('Agus Sutanto','Analisis Data','Anggota')]:
+        page.get_by_role('button',name='Tambah agen',exact=True).click()
+        page.get_by_label('Nama lengkap').fill(name)
+        page.get_by_label('Divisi',exact=True).select_option(division)
+        page.get_by_role('button',name=position,exact=True).click()
+        expect(page.get_by_label('Jabatan',exact=True)).to_have_value(position)
+        page.get_by_role('button',name='Simpan profil').click()
+        expect(page.locator('dialog').get_by_role('heading',name=name,exact=True)).to_be_visible()
+        page.get_by_role('button',name='Tutup panel').click()
+    page.get_by_label('Cari agen',exact=True).fill('SU')
+    expect(page.locator('.agent-card')).to_have_count(3)
+    page.get_by_label('Filter divisi',exact=True).select_option('Media Kreatif')
+    page.get_by_label('Filter jabatan',exact=True).select_option('bph')
+    expect(page.locator('.agent-card h2')).to_have_text(['Nadia Suci'])
+    page.get_by_label('Filter divisi',exact=True).select_option('')
+    page.get_by_label('Filter jabatan',exact=True).select_option('')
+    page.get_by_label('Urutkan agen').select_option('name-asc')
+    expect(page.locator('.agent-card h2')).to_have_text(['Agus Sutanto','Nadia Suci','Surya Utama'])
+    page.get_by_label('Urutkan agen').select_option('name-desc')
+    expect(page.locator('.agent-card h2')).to_have_text(['Surya Utama','Nadia Suci','Agus Sutanto'])
+    page.get_by_label('Cari agen',exact=True).fill('zzzz-no-match')
+    expect(page.locator('#agent-grid')).to_contain_text('Tidak ada agen yang sesuai')
+    page.get_by_label('Cari agen',exact=True).fill('')
+    page.get_by_label('Urutkan agen').select_option('division')
+    page.screenshot(path=str(out/'directory-desktop.png'),full_page=True)
+    # Edit all identity fields while keeping the ID used by past records.
+    page.get_by_role('button',name='Edit profil Agen Integrasi',exact=True).click()
+    page.get_by_label('Nama lengkap').fill('Surya Integrasi')
+    page.get_by_label('Divisi',exact=True).select_option('Pengurus Inti')
+    page.get_by_label('Jabatan',exact=True).fill('Koordinator Program dan Kemitraan')
+    page.get_by_role('button',name='Simpan profil').click()
+    expect(page.locator('.profile-hero')).to_contain_text('Koordinator Program dan Kemitraan')
+    assert backend.rows['ps_agents'][0]['id']==AGENT
+    assert backend.rows['ps_agents'][0]['division']=='Pengurus Inti'
+    assert backend.rows['ps_posts'][0]['agent_id']==AGENT
+    assert backend.rows['ps_shifts'][0]['agent_id']==AGENT
+    page.get_by_role('button',name='Tutup panel').click()
+    page.reload(wait_until='networkidle')
+    page.get_by_label('Cari agen',exact=True).fill('INTEGRA')
+    expect(page.locator('.agent-card h2')).to_have_text(['Surya Integrasi'])
+    page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
+    page.get_by_role('button',name='Tambah penugasan').click()
+    field=page.get_by_role('combobox',name='Agen',exact=True)
+    field.fill('zzzz-no-match')
+    expect(page.locator('.picker-empty')).to_contain_text('Tidak ada agen yang cocok')
+    assert page.locator('#shift-form [name="agent"]').input_value()==''
+    before=len(backend.rows['ps_shifts'])
+    page.get_by_role('button',name='Simpan penugasan').click()
+    expect(page.locator('#shift-form')).to_be_visible()
+    assert len(backend.rows['ps_shifts'])==before
+    field.fill('su')
+    expect(page.locator('.agent-picker-options [role="option"]')).to_have_count(4)
+    page.screenshot(path=str(out/'agent-picker-desktop.png'),full_page=True)
+    field.press('Escape')
+    expect(page.locator('dialog')).to_be_visible()
+    expect(field).to_have_attribute('aria-expanded','false')
+    field.fill('Suci')
+    field.press('ArrowDown')
+    field.press('Enter')
+    expect(field).to_have_value('Nadia Suci')
+    page.get_by_role('button',name='Simpan penugasan').click()
+    expect(page.locator('dialog')).to_be_hidden()
+    expected_id=next(a['id'] for a in backend.rows['ps_agents'] if a['name']=='Nadia Suci')
+    assert backend.rows['ps_shifts'][-1]['agent_id']==expected_id
+    page.get_by_role('button',name='Jadwal Master (Mingguan)',exact=True).click()
+    page.get_by_role('button',name='Tambah ke jadwal master',exact=True).click()
+    choose_agent(page,'Agen','Agus Sutanto')
+    page.get_by_role('button',name='Simpan jadwal master',exact=True).click()
+    expect(page.locator('dialog')).to_be_hidden()
+    weekly_id=backend.rows['ps_weekly_schedule'][0]['id']
+    page.get_by_role('button',name='Pindah',exact=True).click()
+    expect(page.get_by_role('combobox',name='Agen',exact=True)).to_be_disabled()
+    expect(page.get_by_role('combobox',name='Agen',exact=True)).to_have_value('Agus Sutanto')
+    page.get_by_label('Hari jaga',exact=True).select_option('Selasa')
+    page.get_by_role('button',name='Simpan jadwal master',exact=True).click()
+    expect(page.locator('dialog')).to_be_hidden()
+    assert backend.rows['ps_weekly_schedule'][0]['id']==weekly_id
+    assert backend.rows['ps_weekly_schedule'][0]['day_name']=='Selasa'
     page.get_by_role('button',name='Keluar',exact=True).click()
     expect(page.locator('#workspace-shell')).to_be_hidden()
     assert page.locator('#main').inner_text()==''
@@ -228,6 +313,15 @@ with sync_playwright() as p:
     for route in ['agen','kehadiran','konten']:
         mobile.goto(args.base_url+'/admin/#'+route,wait_until='networkidle')
         assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth'),route
+    mobile.get_by_role('link',name='Direktori Agen',exact=True).click()
+    mobile.screenshot(path=str(out/'directory-mobile.png'),full_page=True)
+    mobile.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
+    mobile.get_by_role('button',name='Tambah penugasan').click()
+    mobile.get_by_role('combobox',name='Agen',exact=True).fill('integ')
+    mobile.screenshot(path=str(out/'agent-picker-mobile.png'),full_page=True)
+    mobile.get_by_role('option').filter(has_text='Agen Integrasi').tap()
+    assert mobile.locator('#shift-form [name="agent"]').input_value()==AGENT
+    assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors,errors
-    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering'],'screenshots':str(out)}))
+    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker'],'screenshots':str(out)}))
     browser.close()

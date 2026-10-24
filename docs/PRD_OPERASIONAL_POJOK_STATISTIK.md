@@ -1,6 +1,6 @@
 # PRD — Jaga Offline, Layanan Online, dan Apresiasi Agen Pojok Statistik UI
 
-Versi: 1.2, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
+Versi: 1.3, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
 
 ## 1. Ringkasan keputusan
 
@@ -362,6 +362,23 @@ Pemeriksaan sumber legacy pada 24 Oktober 2026 menemukan 5 agen Pengurus Inti da
 
 Mengedit jabatan/foto tidak boleh memindahkan divisi karena opsi lama tidak tersedia. Label ambigu lama tetap terlihat untuk ditinjau admin, bukan dipetakan otomatis berdasarkan nama. Untuk validasi online di server, gunakan identitas divisi yang dikelola secara eksplisit; label bebas semata tidak menjadi bukti kelayakan.
 
+### F-13. Edit keanggotaan, jabatan PI, filter, dan pencarian ketik
+
+**Kebutuhan pengguna yang dikonfirmasi:** nama, divisi, dan jabatan dapat diedit oleh admin langsung dari direktori. Pengurus Inti mempunyai jabatan yang dapat disunting; di masing-masing divisi terdapat BPH dan Anggota. Pengelompokan/urutan dan filter memudahkan pencarian tanpa menggulir seluruh daftar.
+
+- Tombol Edit profil tersedia pada setiap kartu; edit nama/divisi/jabatan mempertahankan ID agen agar riwayat, jadwal, dan PIC konten tidak terputus.
+- Saran jabatan PI: Ketua Agen Pojok Statistik, Wakil Ketua Agen, Sekretaris dan Bendahara, Koordinator Analisis Data dan Pelayanan, serta Koordinator Media Kreatif. Sekretaris dan Bendahara juga dapat dipakai sebagai dua jabatan terpisah. Saran ini bukan daftar nama orang atau batas jabatan tetap; admin dapat mengetik jabatan lain.
+- Divisi lainnya menyediakan saran BPH dan Anggota. Jabatan lama/khusus tidak diubah otomatis. Mengubah divisi memperbarui saran, bukan mengganti jabatan tersimpan tanpa tindakan admin.
+- Tampilan default dikelompokkan per divisi, dengan PI di awal dan saran urutan jabatan. BPH didahulukan dalam kelompok divisi; nama menjadi urutan berikutnya. Tersedia pilihan Nama A–Z dan Nama Z–A untuk seluruh hasil.
+- Filter divisi dan kategori jabatan (PI/BPH/Anggota/jabatan lain) dapat dipakai bersamaan dengan pencarian. Jumlah hasil dan pesan kosong harus terlihat.
+- Mengetik `su` menemukan potongan nama di bagian mana pun, misalnya Surya, Nadia Suci, dan Agus Sutanto; huruf besar/kecil tidak dibedakan. Beberapa kata dapat mempersempit potongan nama bersama-sama; divisi dan jabatan dipilih melalui filter agar nama tanpa `su` tidak ikut muncul hanya karena berada di divisi Konsultasi.
+- Pemilihan agen pada penugasan harian, jadwal master, sukarelawan, dan PIC konten menggunakan kolom pencarian ketik dengan hasil nama + divisi + jabatan. Nilai yang dikirim tetap ID agen, bukan teks nama.
+- Nama yang sama tidak digabung; pengguna memilih hasil yang benar berdasarkan detail. Teks yang belum dipilih dari hasil pencarian tidak boleh disimpan sebagai agen valid.
+- Mendukung klik/tap, Arrow Up/Down, Enter, Escape, dan navigasi Tab. Escape pertama menutup hasil pencarian, bukan membuang formulir yang masih diedit.
+- Penugasan baru hanya menawarkan agen aktif; penugasan lama dengan agen nonaktif tetap menampilkan identitas yang sudah tersimpan untuk menjaga riwayat.
+
+Perubahan ini berupa UI dan perilaku direktori/pemilih pada model data agen yang sudah ada. Tidak membuat akun login per agen atau mengubah keanggotaan database secara massal.
+
 ## 6. Navigasi dan penjagaan kualitas UI
 
 | Area               | Struktur                                                                              |
@@ -491,6 +508,19 @@ Roster online tidak menghitung ulang PJ klien yang sudah disimpan. Aktivitas onl
 | AC-44 | Klien lama menghubungi lagi minggu depan                                                 | Memakai PJ tetap yang tersimpan; bukan petugas piket baru                                                  |
 | AC-45 | Admin mengalihkan PJ klien                                                               | Riwayat, alasan, PJ lama/baru tersimpan; perubahan jadwal saja tidak menyebabkan alih PJ                   |
 | AC-46 | Tanggal klien baru tidak memiliki petugas OA yang valid                                  | Masuk antrean penetapan PJ; tidak ditebak dari hari sekarang                                               |
+
+### Penerimaan tambahan — direktori dan pencarian agen
+
+| ID    | Skenario                                                | Hasil yang wajib                                                             |
+| ----- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| AC-47 | Admin mengganti nama, divisi, dan jabatan               | ID agen tetap; jadwal/riwayat/PIC konten tetap mengacu agen yang sama        |
+| AC-48 | PI memakai jabatan di luar saran                        | Nama jabatan tersimpan sesuai input; tidak ditebak dari nama orang           |
+| AC-49 | Mengetik `SU` di direktori                              | Menemukan nama yang mengandung `su` pada bagian mana pun                     |
+| AC-50 | Search + filter Media Kreatif + BPH                     | Hanya agen yang memenuhi seluruh kriteria tampil                             |
+| AC-51 | Memilih A–Z atau Z–A                                    | Urutan hasil berubah sesuai pilihan, tanpa mengubah record agen              |
+| AC-52 | Mengetik nama pada form penugasan dan memilih hasil     | Yang tersimpan adalah ID agen hasil pilihan; nama sama tetap dapat dibedakan |
+| AC-53 | Teks tidak cocok atau belum dipilih pada form penugasan | Simpan ditolak dan formulir tetap ada                                        |
+| AC-54 | Memilih hasil melalui keyboard atau tap ponsel          | Hasil ID sama dengan klik desktop dan tidak menimbulkan overflow horizontal  |
 
 ## 11. Prioritas dan urutan implementasi
 
