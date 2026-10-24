@@ -55,7 +55,7 @@ export function readableError(error) {
     return "Data belum sesuai aturan. Periksa status, tanggal, jam, dan tautan publikasi.";
   if (error?.code === "42501")
     return "Akses ditolak. Masuk menggunakan akun admin yang telah diizinkan.";
-  if (["42P01", "PGRST205", "PGRST202"].includes(error?.code))
+  if (["42P01", "PGRST205", "PGRST202", "PGRST204"].includes(error?.code))
     return "Tabel fitur baru belum diaktifkan di Supabase. Jalankan migrasi SQL terbaru di Supabase SQL Editor.";
   if (error?.code === "CONFLICT")
     return "Data ini telah berubah di perangkat lain. Muat ulang sebelum menyimpan lagi.";
@@ -401,18 +401,7 @@ export function createRepository(
             .eq("version", old._version);
         return await request.select("*").maybeSingle();
       };
-      let { data, error } = await executeWrite(payload);
-      if (
-        error?.code === "PGRST204" &&
-        collection === "shifts" &&
-        payload &&
-        ("is_extra" in payload || "fine_paid" in payload)
-      ) {
-        const fallbackPayload = { ...payload };
-        delete fallbackPayload.is_extra;
-        delete fallbackPayload.fine_paid;
-        ({ data, error } = await executeWrite(fallbackPayload));
-      }
+      const { data, error } = await executeWrite(payload);
       if (error) throw error;
       if (!data) throw { code: "CONFLICT" };
       const result = structuredClone(after);

@@ -1,6 +1,6 @@
-# PRD — Operasional dan Apresiasi Agen Pojok Statistik UI
+# PRD — Jaga Offline, Layanan Online, dan Apresiasi Agen Pojok Statistik UI
 
-Versi: 1.1, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
+Versi: 1.2, draf untuk tinjauan produk · 24 Oktober 2026 (WIB)
 
 ## 1. Ringkasan keputusan
 
@@ -12,7 +12,9 @@ Pertahankan bahasa visual workspace baru, login satu admin, direktori berfoto, d
 
 Jadwal mingguan menjadi cara utama mengatur penugasan. Tanggal tetap digunakan untuk bukti kehadiran, pengecualian hari libur, dan riwayat; admin tidak perlu memasukkan ulang setiap tanggal satu per satu.
 
-Dokumen ini merumuskan kebutuhan dan kriteria penerimaan, bukan laporan bahwa fitur tersebut sudah tersedia. Tidak ada perubahan aplikasi/database yang dilakukan sebagai bagian dari penyusunan PRD ini.
+Dokumen ini merumuskan kebutuhan dan kriteria penerimaan, bukan laporan bahwa seluruh fitur sudah tersedia. Revisi 1.2 disertai perbaikan terbatas pada pilihan divisi, pengecualian/persistensi sukarelawan, dan pemisahan durasi sukarela dari sesi reguler. Roster online dan tab klien OA LINE masih spesifikasi untuk implementasi berikutnya; database produksi tidak diubah dalam revisi ini.
+
+**Perluasan yang dikonfirmasi:** jadwal online berulang untuk Instagram dan OA LINE hanya bagi Divisi Pelayanan dan Konsultasi; petugas IG melaksanakan publikasi kalender; PJ klien OA menetap setelah hari kontak pertama. Offline tetap berlaku untuk semua divisi. Sukarelawan hanya menambah durasi apresiasi dan tidak pernah dikenai denda pada sesi bantuannya.
 
 ### Catatan versi kode yang ditinjau
 
@@ -155,14 +157,14 @@ Tombol **Tambah sukarelawan** memilih agen aktif yang belum tercatat pada sesi t
 
 - Penanda sukarelawan tersimpan permanen, walaupun pola mingguan diubah kemudian.
 - Sukarelawan bebas denda keterlambatan maupun ketidakhadiran untuk sesi sukarela itu. Tidak datang membantu bukan pelanggaran.
-- Kehadiran sukarela masuk total kontribusi dan kategori apresiasi ekstra.
+- Kehadiran sukarela hanya menambahkan durasi bantuan pada dashboard apresiasi. Tidak menambah jumlah sesi reguler, denominator kewajiban, atau kewajiban baru.
 - Satu agen pada satu sesi hanya memiliki satu rekaman kontribusi aktif. Reguler yang datang tidak didaftarkan lagi sebagai ekstra.
 - Bantuan sukarela tidak menghapus kewajiban reguler atau ketidakhadiran agen lain.
 - Jika memang menggantikan petugas, gunakan aksi **Tetapkan pengganti**. Tautkan pengganti dengan penugasan asal dan alasan; keputusan status petugas asal harus eksplisit.
 - Saat bantuan dibatalkan karena salah input, kontribusinya tidak lagi dihitung tetapi jejak koreksi tetap tersedia.
 - Kedatangan pada/setelah akhir sesi tidak otomatis menghasilkan satu sesi kontribusi bernilai penuh. Tandai di luar jam; kontribusi tambahan memerlukan sesi/jam pengecualian yang disahkan admin.
 
-**Contoh:** Agen B tidak mendapat jadwal Rabu siang, tetapi membantu pukul 14.15–15.00. Ia tampil sebagai Sukarelawan, memperoleh kontribusi 45 menit terverifikasi, tidak dikenai denda, dan tidak mengubah status petugas reguler Rabu siang.
+**Contoh:** Agen B tidak mendapat jadwal Rabu siang, tetapi membantu pukul 14.15–15.00. Ia tampil sebagai Sukarelawan, memperoleh kontribusi 45 menit terverifikasi tanpa menambah sesi reguler, tidak dikenai denda, dan tidak mengubah status petugas reguler Rabu siang.
 
 ### F-05. Durasi yang dapat dijelaskan
 
@@ -193,27 +195,29 @@ Pertahankan beranda operasional workspace baru: jadwal hari ini, tindak lanjut, 
 
 **Filter bersama:** bulan berjalan, bulan lain, rentang tanggal, periode kepengurusan, dan semua periode. Judul penghargaan harus mengikuti filter. Semua perhitungan memakai kehadiran valid dalam rentang WIB yang sama.
 
-| Metrik                | Definisi                                                                       |
-| --------------------- | ------------------------------------------------------------------------------ |
-| Sesi reguler hadir    | Sesi kewajiban dengan status Hadir dan kontribusi dalam jendela sesi           |
-| Sesi bantuan sukarela | Sesi ekstra dengan kehadiran valid dan kontribusi positif                      |
-| Total sesi kontribusi | Gabungan sesi hadir valid, termasuk pengganti; unik per agen/sesi aktual       |
-| Menit kontribusi      | Durasi menurut F-05, dengan pemisahan estimasi vs terverifikasi                |
-| Rasio hadir reguler   | Reguler hadir / kewajiban reguler yang sudah ditutup; denominator ditampilkan  |
-| Ketepatan waktu       | Reguler hadir tepat waktu / reguler hadir; sukarelawan tidak masuk denominator |
+| Metrik                  | Definisi                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| Sesi reguler hadir      | Sesi kewajiban dengan status Hadir dan kontribusi dalam jendela sesi           |
+| Durasi bantuan sukarela | Menit bantuan valid; tidak menambah sesi reguler atau kewajiban                |
+| Total sesi reguler      | Sesi kewajiban hadir yang valid; sukarelawan tidak menambah angka ini          |
+| Menit kontribusi        | Durasi menurut F-05, dengan pemisahan estimasi vs terverifikasi                |
+| Rasio hadir reguler     | Reguler hadir / kewajiban reguler yang sudah ditutup; denominator ditampilkan  |
+| Ketepatan waktu         | Reguler hadir tepat waktu / reguler hadir; sukarelawan tidak masuk denominator |
 
 Izin/sakit yang disetujui dikeluarkan dari denominator kewajiban efektif dalam usulan default, tetapi jumlahnya tetap ditampilkan. Penugasan masa depan dan hari libur tidak masuk denominator. Nilai tanpa kewajiban ditampilkan “—”, bukan 100%. Pilihan kebijakan denominator harus tertulis dan berlaku konsisten.
 
 **Apresiasi yang disarankan:**
 
-1. **Kontributor terbanyak:** jumlah sesi kontribusi, dengan rincian reguler, sukarela, dan pengganti.
-2. **Kontribusi sukarela:** sesi serta menit ekstra secara khusus agar inisiatif membantu terlihat.
+1. **Frekuensi jaga reguler:** jumlah sesi kewajiban yang dipenuhi; sukarelawan tidak menambah jumlah sesi.
+2. **Kontribusi sukarela:** menit ekstra secara khusus agar inisiatif membantu terlihat; riwayat kunjungan dapat dibuka sebagai detail, bukan bonus sesi reguler.
 3. **Konsistensi jaga:** rasio pemenuhan kewajiban, selalu disertai jumlah penugasan; agen 1/1 tidak otomatis dianggap lebih berprestasi daripada 10/10.
 4. **Durasi kontribusi:** total menit, dengan status sumber perhitungan terlihat.
 
-Top 5 ringkas dan Top 10 sesi/durasi tetap tersedia. Grafik dapat diklik untuk melihat sesi penyusunnya. Nilai seri diberi peringkat bersama; jangan membuat pemenang tersembunyi berdasarkan urutan nama atau nilai denda.
+Top 5 ringkas berdasarkan durasi dan Top 10 sesi reguler/durasi tetap tersedia. Total durasi menggabungkan menit reguler dan sukarela dengan rincian keduanya; frekuensi sesi hanya menghitung reguler. Grafik dapat diklik untuk melihat sesi penyusunnya. Nilai seri diberi peringkat bersama; jangan membuat pemenang tersembunyi berdasarkan urutan nama atau nilai denda.
 
 **Star Agent of the Month:** kartu apresiasi dapat dipertahankan, tetapi metrik dasarnya tertulis dan memakai bulan yang benar. Rekomendasi awal adalah menampilkan pemenang per kategori, bukan skor gabungan yang belum disepakati. Jika organisasi tetap menginginkan satu pemenang, aturan dan pemutus seri harus diputuskan sebelum fitur itu aktif. Tidak menerbitkan sertifikat dengan klaim durasi aktual dari data estimasi.
+
+**Penegasan pengguna:** sukarelawan bebas denda kapan pun datang pada sesi bantuannya, termasuk jika tidak menghasilkan durasi positif. Validasi rentang waktu hanya menentukan menit apresiasi, tidak pernah menjadi alasan mendenda sukarelawan. Agen yang memang bertugas tidak boleh diklasifikasikan ulang sebagai sukarelawan untuk menghapus kewajiban.
 
 Total sesi dan total menit menjawab pertanyaan berbeda. Tidak menjumlahkan keduanya menjadi skor tanpa bobot yang disepakati. Kontribusi konten juga tidak langsung dicampurkan ke peringkat kehadiran.
 
@@ -304,6 +308,60 @@ Tampilan Rekap Denda membedakan tagihan aktif, sudah dibayar, dibatalkan, dan pe
 
 **Ekspor CSV:** daftar agen, jadwal mingguan, kehadiran, kontribusi, dan denda menurut filter aktif. Sertakan periode, zona waktu, jenis kontribusi, waktu datang/pulang, sumber durasi, dan status denda/pembayaran yang relevan. Format harus tetap terbaca di spreadsheet; nilai yang berpotensi menjadi formula diperlakukan sebagai teks.
 
+### F-09. Jadwal online berulang: Instagram dan OA LINE
+
+**Keputusan pengguna:** jadwal offline berlaku untuk seluruh agen dari semua divisi. Jadwal online merupakan roster terpisah, hanya untuk agen aktif **Divisi Pelayanan dan Konsultasi**, dengan dua kanal berbeda: Instagram dan OA LINE. Divisi Analisis Data dan Media Kreatif tetap dapat masuk jaga offline; tidak otomatis berhak menjadi petugas online.
+
+- Admin mengatur satu petugas Instagram dan satu petugas OA LINE per hari online aktif. Pola otomatis berulang setiap minggu.
+- Kanal online memakai penanggung jawab harian, bukan otomatis mengikuti dua sesi offline. Hari online aktif dan cakupan waktunya dikonfigurasi terpisah; akhir pekan belum diasumsikan wajib atau libur.
+- Instagram dan OA LINE boleh dipegang agen berbeda. Jika agen yang sama dipilih pada kedua kanal, beri peringatan beban kerja; pembatasan keras perlu keputusan organisasi.
+- Petugas offline dan online tidak saling menggantikan. Menggeser jadwal offline tidak memindahkan petugas kanal online.
+- Form hanya menawarkan agen aktif Pelayanan dan Konsultasi. Server memvalidasi kelayakan yang sama, bukan hanya menyaring dropdown.
+- Perubahan divisi/status agen memberi peringatan atas penugasan online mendatang; jangan menghapus kepemilikan klien atau sejarah penugasannya secara otomatis.
+- Jadwal online mendukung versi efektif dan pengecualian harian seperti jadwal offline. Kekosongan petugas harus terlihat sebagai tindak lanjut, bukan diisi otomatis dengan nama sembarang.
+- Contoh: Senin Instagram A, OA LINE B; Selasa Instagram C, OA LINE D. Pola itu berlaku kembali minggu berikutnya.
+
+### F-10. Petugas Instagram terhubung dengan kalender publikasi
+
+- Pisahkan **PIC produksi konten** (brief/caption/desain) dari **petugas publikasi**. PIC produksi tidak otomatis harus dari Pelayanan dan Konsultasi.
+- Tanggal publikasi dalam kalender menentukan petugas Instagram hari itu berdasarkan jadwal online yang berlaku. Semua postingan hari tersebut tampil di antrean petugas tersebut.
+- Detail konten menampilkan PIC produksi, petugas publikasi, jam WIB, status, dan tautan/bukti terbit. Tidak membuat akun agen tambahan.
+- Mengubah tanggal konten yang belum terbit memperbarui petugas sesuai tanggal baru dan menampilkan perubahan itu sebelum disimpan. Konten terbit menyimpan siapa pelaksana publikasinya saat kejadian; tidak berubah mengikuti roster terbaru.
+- Penggantian petugas publikasi pada hari tertentu melalui pengecualian beralasan dan diaudit, tetap memakai agen yang memenuhi syarat.
+- Jika jadwal kosong atau agen nonaktif, konten tetap dapat direncanakan tetapi ditandai “petugas publikasi belum ditentukan”; jangan diklaim siap secara operasional.
+- Publikasi tetap manual melalui Instagram. Jadwal kalender tidak berarti aplikasi mengirim postingan otomatis.
+
+### F-11. Tab Layanan OA LINE dan PJ klien yang menetap
+
+**Aturan utama:** petugas OA LINE pada saat klien pertama menghubungi menjadi PJ klien tersebut. Kepemilikan ini disimpan dan tidak dihitung ulang ketika hari/piket berganti. Agen yang bukan petugas hari ini tetap menjadi PJ untuk klien lama miliknya.
+
+**Data klien dan layanan:** ID klien internal, nama/display name, identitas OA LINE bila tersedia, waktu pertama chat dalam WIB, waktu input, ringkasan kebutuhan, detail pertanyaan, PJ tetap, asal penugasan, status layanan, pembaruan/catatan, serta waktu respons/penyelesaian jika dicatat.
+
+**Alur:**
+
+1. Admin membuka tab **Layanan OA LINE → Tambah klien/percakapan** dan mencari apakah klien sudah terdaftar.
+2. Klien baru: admin memasukkan waktu chat sebenarnya. Sistem mengusulkan petugas OA LINE pada hari/tanggal chat tersebut, bukan hari saat data diinput. Admin meninjau lalu menyimpan PJ pada klien.
+3. Jika tidak ada jadwal yang valid atau pemetaan historis tidak tersedia, tandai “perlu penetapan PJ” dan minta pilihan admin; jangan menebak dari jadwal hari ini.
+4. Klien lama: percakapan/catatan baru tetap mengikuti PJ klien yang sudah tersimpan. Mengubah tanggal kontak pertama tidak otomatis menimpa PJ tanpa alur koreksi.
+5. Status layanan awal: Baru, Dalam penanganan, Menunggu klien, Selesai. Riwayat dapat dibuka kembali tanpa mengganti PJ.
+6. Hanya admin dapat melakukan **Alihkan PJ**, dengan agen Pelayanan dan Konsultasi yang memenuhi syarat, alasan, waktu berlaku, dan riwayat PJ lama–baru. Petugas piket harian tidak otomatis mengambil alih semua klien terbuka.
+
+**Contoh:** klien X pertama chat Senin ketika B bertugas OA LINE. Selasa petugas OA adalah D, tetapi X tetap ditangani B; klien baru Y pada Selasa ditugaskan kepada D. Jika B tidak dapat melanjutkan, admin memindahkan X secara eksplisit, bukan melalui pergantian kalender.
+
+**Tampilan:** daftar klien dengan filter PJ/status/tanggal, panel riwayat layanan, jumlah layanan terbuka per PJ, antrean klien tanpa PJ, dan penanda petugas OA hari ini. Penanda “piket hari ini” berbeda dari label “PJ tetap klien”.
+
+Nama klien bukan ID unik; gunakan identitas LINE atau ID internal. Nama mirip memunculkan saran pemeriksaan, tidak otomatis menggabungkan orang berbeda. Jika identitas klien belum lengkap, admin dapat mencatat sementara dan melengkapinya dengan riwayat koreksi.
+
+Tab ini adalah pencatatan/pengelolaan layanan oleh admin. Pembalasan pesan tetap dilakukan agen di OA LINE; aplikasi tidak mengirim, membaca otomatis, atau menyinkronkan chat tanpa integrasi LINE terpisah. Tidak menyimpan token LINE atau data klien pada frontend publik. Batasi detail pribadi pada kebutuhan layanan; penyimpanan data klien memakai RLS admin dan ekspor terkontrol.
+
+### F-12. Struktur divisi yang benar
+
+Direktori, filter, dan form tambah/edit minimal mendukung **Pengurus Inti**, **Pelayanan dan Konsultasi**, **Analisis Data**, dan **Media Kreatif**. Semua divisi tambahan yang memang sudah ada di data tetap ditampilkan. Jangan mengganti dua divisi berbeda menjadi nama gabungan “Analisis & Pelayanan”.
+
+Pemeriksaan sumber legacy pada 24 Oktober 2026 menemukan 5 agen Pengurus Inti dan masing-masing 12 agen pada tiga divisi lainnya. Data `ps_agents` dilindungi RLS dan tidak dapat diperiksa tanpa sesi admin; tidak boleh menganggap seluruh agen legacy sudah diimpor.
+
+Mengedit jabatan/foto tidak boleh memindahkan divisi karena opsi lama tidak tersedia. Label ambigu lama tetap terlihat untuk ditinjau admin, bukan dipetakan otomatis berdasarkan nama. Untuk validasi online di server, gunakan identitas divisi yang dikelola secara eksplisit; label bebas semata tidak menjadi bukti kelayakan.
+
 ## 6. Navigasi dan penjagaan kualitas UI
 
 | Area               | Struktur                                                                              |
@@ -313,6 +371,8 @@ Tampilan Rekap Denda membedakan tagihan aktif, sudah dibayar, dibatalkan, dan pe
 | Direktori Agen     | Profil, foto, peran organisasi, ringkasan kontribusi                                  |
 | Konten & Publikasi | Kalender/daftar, editor konten, PIC, materi, review                                   |
 | Rekap Denda        | Tagihan, pembayaran, koreksi, filter dan ekspor                                       |
+
+Tambahkan area **Jaga Online** (tab Instagram dan OA LINE) serta **Layanan OA LINE** (klien dan PJ tetap). Pada desktop keduanya dapat menjadi satu menu Layanan Online dengan sub-tab Jadwal Online, Publikasi IG, dan Klien OA LINE; pada mobile gunakan Lainnya agar navigasi tidak dipaksakan terlalu padat.
 
 Analitik lengkap dibuka dari Beranda tanpa memadatkan layar awal. Pada ponsel, navigasi bawah memakai label pendek; Rekap Denda/Pengaturan dapat berada dalam Lainnya jika lima menu membuat teks sulit dibaca.
 
@@ -338,6 +398,17 @@ Ini rancangan entitas, bukan instruksi langsung mengganti schema yang sudah berj
 **Invariant wajib:** unik agen–sesi aktual, versi jadwal tidak mengubah sejarah, penanda ekstra tersimpan, tidak ada durasi negatif, tidak ada denda ganda untuk kejadian yang sama, serta setiap pembayaran dapat ditelusuri. `ps_shifts` saat ini memuat penugasan dan status kehadiran; perlu migrasi bertahap untuk memisahkan tanggung jawabnya. Jangan langsung menambahkan semua field denda/pembayaran ke satu baris shift.
 
 Snapshot bukan salinan seluruh data agen: identitas tetap ber-ID, sedangkan jam, aturan, peran sesi, dan sumber kewajiban disimpan sesuai fakta saat kejadian. Koreksi historis tetap mungkin melalui alur koreksi yang diaudit.
+
+### Tambahan entitas online
+
+- **Divisi:** identitas stabil dan keanggotaan agen untuk validasi petugas online.
+- **Jadwal online + versi:** hari aktif, kanal Instagram/OA LINE, agen, periode berlaku, dan pengecualian tanggal. Terpisah dari dua sesi offline.
+- **Penugasan publikasi:** konten, petugas publikasi, tanggal/jam rencana, pelaksana saat terbit, asal roster/pengecualian.
+- **Klien OA LINE:** ID stabil, identitas kanal bila tersedia, waktu chat pertama, PJ tetap, status.
+- **Percakapan/catatan layanan:** klien, waktu kejadian/input, kebutuhan, tindak lanjut, respons/penyelesaian yang dicatat.
+- **Riwayat alih PJ:** klien, PJ lama/baru, alasan, waktu, pelaku admin.
+
+Roster online tidak menghitung ulang PJ klien yang sudah disimpan. Aktivitas online tidak dikonversi menjadi menit/sesi offline atau dikenai denda offline tanpa kebijakan tambahan yang disepakati. Jangan memberikan menit layanan fiktif hanya karena seseorang terdaftar sebagai piket sehari.
 
 ## 8. Integritas, keamanan, dan waktu
 
@@ -368,7 +439,7 @@ Snapshot bukan salinan seluruh data agen: identitas tetap ber-ID, sedangkan jam,
 | AC-02 | Minggu berganti tanpa perubahan pola                                      | Daftar reguler terbentuk otomatis; admin tidak menyalin, mempublikasikan ulang, atau mengisi tanggal satu per satu |
 | AC-03 | Coba menambahkan A dua kali pada hari/sesi sama                           | Ditolak; tidak menambah sesi kontribusi                                                                            |
 | AC-04 | Perubahan pola setelah kehadiran lama tercatat                            | Jenis kontribusi, jam, PJ, dan aturan lama tetap sesuai snapshot                                                   |
-| AC-05 | B reguler Senin pagi membantu sukarela Senin siang                        | Dua sesi berbeda; siang berlabel sukarelawan, tanpa denda ekstra                                                   |
+| AC-05 | B reguler Senin pagi membantu sukarela Senin siang                        | Pagi dihitung sebagai sesi reguler; siang menambah durasi sukarela saja, tanpa denda                               |
 | AC-06 | B membantu sesi A yang tidak hadir                                        | A tidak otomatis dianggap hadir/izin; kewajibannya tetap ditinjau                                                  |
 | AC-07 | Relawan datang 14.15 dan pulang 15.00                                     | Kontribusi 45 menit tercatat dan masuk kategori sukarela                                                           |
 | AC-08 | Sesi 10.00–12.30; datang 09.30 tanpa jam pulang                           | Estimasi 150 menit, tidak diklaim terverifikasi                                                                    |
@@ -404,6 +475,23 @@ Snapshot bukan salinan seluruh data agen: identitas tetap ber-ID, sedangkan jam,
 | AC-33 | Hadir dikoreksi menjadi Tidak hadir atau sebaliknya                           | Tidak ada dua denda untuk kejadian sama; perhitungan/koreksi mengikuti status final               |
 | AC-34 | Tarif telat tertinggi melebihi denda tidak hadir                              | Peringatan konsekuensi tampil pada pratinjau sebelum publikasi                                    |
 
+### Penerimaan tambahan — sukarelawan dan layanan online
+
+| ID    | Skenario                                                                                 | Hasil yang wajib                                                                                           |
+| ----- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| AC-35 | Sukarelawan datang kapan pun pada sesi bantuan, termasuk setelah batas toleransi reguler | Denda selalu 0; menit dihitung menurut jendela kontribusi, tidak menambah sesi reguler                     |
+| AC-36 | Agen reguler yang terlambat dipilih melalui Tambah Sukarelawan                           | Ditolak; kewajiban reguler tidak dapat dihapus dengan mengganti label                                      |
+| AC-37 | Kolom penanda sukarelawan belum tersedia di database                                     | Simpan ditolak dengan petunjuk migrasi; tidak boleh menyimpan ulang dengan membuang penanda ekstra         |
+| AC-38 | Filter/tambah/edit agen pada kedua divisi yang disebut pengguna                          | Pelayanan dan Konsultasi serta Analisis Data tersedia secara terpisah; edit jabatan tidak mengganti divisi |
+| AC-39 | Agen Analisis Data dipilih untuk offline dan dicoba untuk online                         | Offline diperbolehkan; online ditolak oleh validasi server                                                 |
+| AC-40 | Senin IG=A dan OA=B, lalu minggu berganti                                                | Pola online tetap sama; roster offline tidak berubah                                                       |
+| AC-41 | Konten dipindah dari Senin ke Selasa sebelum terbit                                      | Petugas publikasi mengikuti roster Instagram Selasa; PIC produksi tetap sesuai penetapannya                |
+| AC-42 | Klien X pertama chat Senin saat OA=B; Selasa OA=D                                        | PJ X tetap B, klien baru Selasa ditugaskan D                                                               |
+| AC-43 | Chat pertama Senin baru dicatat Rabu                                                     | Rekomendasi PJ berdasarkan waktu chat Senin dan roster yang berlaku saat itu                               |
+| AC-44 | Klien lama menghubungi lagi minggu depan                                                 | Memakai PJ tetap yang tersimpan; bukan petugas piket baru                                                  |
+| AC-45 | Admin mengalihkan PJ klien                                                               | Riwayat, alasan, PJ lama/baru tersimpan; perubahan jadwal saja tidak menyebabkan alih PJ                   |
+| AC-46 | Tanggal klien baru tidak memiliki petugas OA yang valid                                  | Masuk antrean penetapan PJ; tidak ditebak dari hari sekarang                                               |
+
 ## 11. Prioritas dan urutan implementasi
 
 Semua kemampuan berikut termasuk target pemulihan operasional; urutannya bukan penghapusan kebutuhan.
@@ -412,7 +500,8 @@ Semua kemampuan berikut termasuk target pemulihan operasional; urutannya bukan p
 2. **Operasi admin:** papan geser dan pindah alternatif, absensi dari jadwal, relawan/pengganti, bulk, koreksi dan durasi berlabel.
 3. **Apresiasi:** dashboard sesi/menit, rincian reguler–sukarela, filter periode, kategori penghargaan dan drill-down.
 4. **Denda dan laporan:** toleransi dan tarif bertingkat yang dapat dikonfigurasi, pengecualian izin yang wajib, simulator, versi kebijakan, transaksi terkait sesi, pembayaran/koreksi, serta CSV.
-5. **Transisi:** migrasi/review riwayat, uji regresi fitur workspace, rekonsiliasi, dan aktivasi produksi.
+5. **Online:** identitas divisi, roster Instagram/OA LINE berulang, pemetaan publikasi, klien OA dengan kepemilikan tetap dan alih PJ.
+6. **Transisi:** migrasi/review riwayat, uji regresi fitur workspace, rekonsiliasi, dan aktivasi produksi.
 
 Pengujian model periode dan waktu dimulai di tahap 1; jangan menunggu tahap dashboard untuk memperbaiki definisi kontribusi. Dashboard operasional dapat dirilis bertahap, tetapi jangan menyatakan fitur legacy lengkap sebelum denda, ekspor, dan rekonsiliasi selesai.
 
@@ -440,3 +529,7 @@ Ukuran awal berupa kriteria teramati, bukan klaim angka hasil yang belum diukur:
 | Izin/sakit masuk denominator?           | Dikeluarkan dari kewajiban efektif; jumlahnya tetap ditampilkan                                  | Rasio transparan dan dapat diaudit                              |
 
 Nominal denda, toleransi, jam sesi aktual, dan syarat penghargaan adalah konfigurasi organisasi; angka contoh di lampiran bukan nilai final yang otomatis diterapkan.
+
+## 14. Keputusan online yang masih perlu ditinjau
+
+Hari aktif/akhir pekan dan jam pergantian piket online belum disebutkan pengguna; jangan otomatis menyalin jam offline. Usulan awal penentuan tanggal memakai WIB kalender, dengan hari aktif dan jam cakupan yang dapat diatur. Tidak menambahkan denda online otomatis. Mekanisme cadangan saat PJ klien cuti/nonaktif memerlukan alih PJ oleh admin; integrasi pengambilan/pembalasan pesan LINE dan publikasi otomatis Instagram tetap di luar cakupan awal.

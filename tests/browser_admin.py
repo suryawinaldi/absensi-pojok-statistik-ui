@@ -27,7 +27,7 @@ class Backend:
         self.writes = []
         self.user = {'id': ADMIN, 'aud': 'authenticated', 'role': 'authenticated', 'email': 'admin@example.test', 'created_at':'2026-01-01T00:00:00Z','app_metadata':{},'user_metadata':{}}
         self.rows = {
-            'ps_agents': [{'id':AGENT,'name':'Agen Integrasi','division':'Media Kreatif','position':'Anggota','active':True,'period':'2026 / 2027','photo_path':None,'version':1}],
+            'ps_agents': [{'id':AGENT,'name':'Agen Integrasi','division':'Pelayanan dan Konsultasi','position':'Anggota','active':True,'period':'2026 / 2027','photo_path':None,'version':1}],
             'ps_shifts': [], 'ps_posts': [], 'ps_weekly_schedule': [], 'ps_settings': []}
     def token(self):
         enc = lambda v: base64.urlsafe_b64encode(json.dumps(v).encode()).decode().rstrip('=')
@@ -126,6 +126,9 @@ with sync_playwright() as p:
     page.get_by_role('link',name='Direktori Agen').click()
     page.get_by_role('button',name='Tambah agen',exact=True).click()
     page.get_by_label('Nama lengkap').fill('Agen Tersimpan')
+    expect(page.get_by_label('Divisi',exact=True)).to_contain_text('Pelayanan dan Konsultasi')
+    expect(page.get_by_label('Divisi',exact=True)).to_contain_text('Analisis Data')
+    page.get_by_label('Divisi',exact=True).select_option('Analisis Data')
     page.get_by_label('Jabatan',exact=True).fill('Koordinator')
     backend.fail_write=True
     page.get_by_role('button',name='Simpan profil').click()
@@ -136,6 +139,7 @@ with sync_playwright() as p:
     page.get_by_role('button',name='Simpan profil').click()
     expect(page.locator('dialog').get_by_role('heading',name='Agen Tersimpan',exact=True)).to_be_visible()
     assert len(backend.rows['ps_agents'])==2
+    assert backend.rows['ps_agents'][-1]['division']=='Analisis Data'
     page.get_by_label('Foto profil').set_input_files({'name':'photo.png','mimeType':'image/png','buffer':PNG})
     expect(page.locator('.profile-hero img')).to_be_visible()
     assert len(backend.uploads)==1
@@ -144,15 +148,33 @@ with sync_playwright() as p:
     page.reload(wait_until='networkidle')
     expect(page.locator('.agent-card img')).to_be_visible()
     page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
+    page.get_by_role('button',name='Agen ekstra',exact=True).click()
+    page.get_by_label('Pilih agen sukarelawan').select_option(AGENT)
+    page.get_by_label('Jam hadir (WIB)',exact=True).fill('11:15')
+    page.get_by_role('button',name='Catat hadir ekstra').click()
+    expect(page.locator('dialog')).to_be_hidden()
+    assert backend.rows['ps_shifts'][0]['is_extra'] is True
+    # A helper must not be counted as a regular session, even after a reload.
+    page.get_by_role('link',name='Beranda',exact=True).click()
+    expect(page.get_by_role('heading',name='Top 10 frekuensi jaga reguler')).to_be_visible()
+    page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
     page.get_by_role('button',name='Tambah penugasan').click()
+    page.get_by_label('Agen',exact=True).select_option(backend.rows['ps_agents'][-1]['id'])
     page.get_by_role('button',name='Simpan penugasan').click()
-    expect(page.get_by_role('button',name='Catat',exact=True)).to_be_visible()
-    page.get_by_role('button',name='Catat',exact=True).click()
+    expect(page.locator('tr').filter(has_text='Agen Tersimpan').get_by_role('button',name='Catat',exact=True)).to_be_visible()
+    page.locator('tr').filter(has_text='Agen Tersimpan').get_by_role('button',name='Catat',exact=True).click()
     page.get_by_label('Status kehadiran').select_option('Hadir')
     page.get_by_label('Jam hadir (WIB)',exact=True).fill('10:07')
     page.get_by_role('button',name='Simpan kehadiran').click()
     expect(page.locator('tbody')).to_contain_text('10:07')
-    assert backend.rows['ps_shifts'][0]['arrival_time']=='10:07'
+    assert backend.rows['ps_shifts'][1]['arrival_time']=='10:07'
+    page.get_by_role('button',name='Agen ekstra',exact=True).click()
+    page.get_by_label('Pilih agen sukarelawan').select_option(backend.rows['ps_agents'][-1]['id'])
+    page.get_by_role('button',name='Catat hadir ekstra').click()
+    expect(page.locator('#toast')).to_contain_text('bertugas reguler')
+    assert len(backend.rows['ps_shifts'])==2
+    assert backend.rows['ps_shifts'][1]['is_extra'] is False
+    page.get_by_role('button',name='Tutup panel').click()
     page.get_by_role('link',name='Konten & Publikasi').click()
     page.get_by_role('button',name='Buat konten',exact=True).click()
     page.get_by_label('Judul konten').fill('Konten Integrasi')
@@ -207,5 +229,5 @@ with sync_playwright() as p:
         mobile.goto(args.base_url+'/admin/#'+route,wait_until='networkidle')
         assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth'),route
     assert not errors,errors
-    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication'],'screenshots':str(out)}))
+    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering'],'screenshots':str(out)}))
     browser.close()

@@ -150,3 +150,28 @@ test("media rendering accepts only inline images or signed URLs from the configu
   );
   assert.equal(repo.isSafeMedia("javascript:alert(1)"), false);
 });
+
+test("missing extra columns never cause a silent retry that loses volunteer classification", async () => {
+  const client = fakeClient({ data: null, error: { code: "PGRST204" } });
+  const repo = createRepository(client, { publicUrl: url });
+  const before = emptyState(),
+    after = emptyState();
+  after.shifts.push({
+    id: "shift",
+    agent: "a1",
+    date: "2026-10-26",
+    session: "Pagi",
+    pj: false,
+    extra: true,
+    status: "Hadir",
+    time: "11:00",
+  });
+  await assert.rejects(
+    repo.commit(before, after),
+    (error) => error.code === "PGRST204",
+  );
+  const inserts = client.calls.filter((call) => call[0] === "insert");
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0][2].is_extra, true);
+  assert.equal(before.shifts.length, 0);
+});
