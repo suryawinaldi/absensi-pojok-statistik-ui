@@ -161,7 +161,9 @@ with sync_playwright() as p:
     assert backend.rows['ps_shifts'][0]['is_extra'] is True
     # A helper must not be counted as a regular session, even after a reload.
     page.get_by_role('link',name='Beranda',exact=True).click()
-    expect(page.get_by_role('heading',name='Top 10 frekuensi jaga reguler')).to_be_visible()
+    expect(page.get_by_role('heading',name='Konsisten hadir, bersama berkarya')).to_be_visible()
+    expect(page.locator('.ranking-column')).to_have_count(1)
+    expect(page.locator('.ranking-column')).to_have_attribute('aria-label', re.compile('75 menit, termasuk 75 menit sukarela'))
     page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
     page.get_by_role('button',name='Tambah penugasan').click()
     choose_agent(page,'Agen','Agen Tersimpan')
@@ -280,6 +282,13 @@ with sync_playwright() as p:
     choose_agent(page,'Agen','Agus Sutanto')
     page.get_by_role('button',name='Simpan jadwal master',exact=True).click()
     expect(page.locator('dialog')).to_be_hidden()
+    # The complete week remains one row; long chip contents cannot escape their card.
+    for width in [1440, 390]:
+        page.set_viewport_size({'width':width,'height':1000})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        assert page.locator('.master-day-card').evaluate_all('(els) => new Set(els.map(e => Math.round(e.getBoundingClientRect().top))).size') == 1
+        assert page.locator('.master-chip').evaluate_all('(els) => els.every(e => e.scrollWidth <= e.clientWidth)')
+    page.set_viewport_size({'width':1440,'height':1000})
     weekly_id=backend.rows['ps_weekly_schedule'][0]['id']
     page.get_by_role('button',name='Pindah',exact=True).click()
     expect(page.get_by_role('combobox',name='Agen',exact=True)).to_be_disabled()

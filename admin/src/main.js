@@ -436,6 +436,23 @@ function render() {
   if (page === "konten") renderContent();
 }
 
+function renderRankingChart(items, mode) {
+  const duration = mode === "duration";
+  const value = item => duration ? item.totalMinutes : item.regularSessions;
+  const maximum = Math.max(1, ...items.map(value));
+  const period = analyticsScope === "month" ? monthLabel(BASE) : "Semua waktu · seluruh catatan kehadiran";
+  const label = n => duration ? `${Math.floor(n / 60)}j ${n % 60}m` : `${n} sesi`;
+  return `<section class="ranking-panel" aria-label="${duration ? "Peringkat durasi kontribusi" : "Peringkat sesi reguler"}">
+    <div class="ranking-heading"><div><p class="eyebrow">APRESIASI KONTRIBUSI · TOP 10</p><h2>${duration ? "Waktu yang memberi dampak" : "Konsisten hadir, bersama berkarya"}</h2><p>${duration ? "Estimasi durasi reguler + sukarela" : "Frekuensi kehadiran sesi reguler"}</p></div><span class="ranking-period">${esc(period)}</span></div>
+    <p class="ranking-note">${duration ? "Durasi dihitung dari jam hadir hingga tutup sesi, belum berdasarkan jam pulang. Bagian jingga menunjukkan bantuan sukarela." : "Kehadiran sukarelawan tidak menambah jumlah sesi reguler."}</p>
+    ${items.length ? `<div class="ranking-scroll" tabindex="0" role="region" aria-label="Grafik peringkat, geser untuk melihat seluruh agen"><div class="ranking-plot" style="--columns:${items.length}">${items.map((item, i) => {
+      const total = value(item);
+      const extra = duration ? Math.min(total, item.extraMinutes) : 0;
+      return `<button class="ranking-column" data-action="agent" data-id="${esc(item.agent.id)}" aria-label="${esc(item.agent.name)}, ${total} ${duration ? "menit" : "sesi reguler"}${duration ? `, termasuk ${extra} menit sukarela` : ""}"><div class="ranking-track"><div class="ranking-bar-group" style="height:${total / maximum * 210}px"><div class="ranking-avatar">${avatar(item.agent)}<strong>${label(total)}</strong></div><div class="ranking-bar"><span style="height:${extra / total * 100}%"></span></div></div></div><span class="ranking-name"><small>#${i + 1}</small><strong>${esc(item.agent.name)}</strong></span><span class="ranking-detail">${duration ? `${item.regularSessions} sesi · ${extra} mnt sukarela` : esc(item.agent.division)}</span></button>`;
+    }).join("")}</div></div>` : '<div class="ranking-empty">Belum ada kehadiran tercatat pada periode ini.</div>'}
+  </section>`;
+}
+
 function renderHome() {
   const shifts = effectiveShiftsForDate(TODAY),
     present = shifts.filter((s) => s.status === "Hadir").length,
@@ -471,11 +488,6 @@ function renderHome() {
         b.totalMinutes - a.totalMinutes || b.totalSessions - a.totalSessions,
     )
     .slice(0, 10);
-  const maxSessions = Math.max(
-    1,
-    ...top10BySessions.map((x) => x.totalSessions),
-  );
-  const maxMinutes = Math.max(1, ...top10ByMinutes.map((x) => x.totalMinutes));
 
   let unpaidFinesTotal = 0;
   let paidFinesTotal = 0;
@@ -523,7 +535,7 @@ function renderHome() {
         <div class="panel star-agent-panel">
           <div class="panel-header">
             <div>
-              <p class="eyebrow" style="color:#9a6700">🌟 STAR AGENT OF THE MONTH</p>
+              <p class="eyebrow" style="color:#9a6700">${analyticsScope === "month" ? "AGEN PILIHAN BULAN INI" : "APRESIASI SEPANJANG WAKTU"}</p>
               <h2 class="panel-title">Apresiasi dedikasi tertinggi</h2>
             </div>
             ${starAgent ? `<button class="button" data-action="show-certificate" data-id="${esc(starAgent.agent.id)}">${icon("spark")}Sertifikat digital</button>` : ""}
@@ -571,57 +583,8 @@ function renderHome() {
         </div>
       </div>
 
-      <div class="dashboard-grid" style="margin-top:18px">
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2 class="panel-title">Top 10 frekuensi jaga reguler</h2>
-              <p class="panel-description">Hanya sesi reguler; bantuan sukarela menambah durasi apresiasi</p>
-            </div>
-            ${icon("trend")}
-          </div>
-          <div class="chart-bars">
-            ${
-              top10BySessions.length
-                ? top10BySessions
-                    .map(
-                      (item) =>
-                        `<div class="bar-row">
-                          <div class="bar-label"><strong>${esc(item.agent.name)}</strong><span>${item.regularSessions} sesi reguler</span></div>
-                          <div class="bar-track"><span class="bar-fill" style="width:${Math.max(4, Math.round((item.totalSessions / maxSessions) * 100))}%"></span></div>
-                        </div>`,
-                    )
-                    .join("")
-                : '<p class="help">Belum ada agen terdaftar.</p>'
-            }
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2 class="panel-title">Top 10 estimasi durasi (reguler + sukarela)</h2>
-              <p class="panel-description">Selisih menit dari jam hadir aktual hingga jam tutup sesi</p>
-            </div>
-            ${icon("clock")}
-          </div>
-          <div class="chart-bars">
-            ${
-              top10ByMinutes.length
-                ? top10ByMinutes
-                    .map(
-                      (item) =>
-                        `<div class="bar-row">
-                          <div class="bar-label"><strong>${esc(item.agent.name)}</strong><span>${item.totalMinutes} menit</span></div>
-                          <div class="bar-track"><span class="bar-fill teal" style="width:${Math.max(4, Math.round((item.totalMinutes / maxMinutes) * 100))}%"></span></div>
-                        </div>`,
-                    )
-                    .join("")
-                : '<p class="help">Belum ada agen terdaftar.</p>'
-            }
-          </div>
-        </div>
-      </div>
+      ${renderRankingChart(top10ByMinutes.filter(x => x.totalMinutes > 0), "duration")}
+      ${renderRankingChart(top10BySessions, "sessions")}
     </section>`;
 }
 
@@ -812,7 +775,7 @@ function renderMasterScheduleView() {
   const settings = activeSettings();
   const list = state.weeklySchedule || [];
   return `<div class="banner">${icon("info")}<span><strong>Geser & Lepas (Drag & Drop):</strong> Tarik kartu agen ke hari atau sesi lain untuk memindahkan jadwal jaga secara instan, atau klik label peran (<strong>PJ / Anggota</strong>) untuk mengubah penanggung jawab sesi.</span></div>
-  <div class="master-board">
+  <p class="help">Senin–Jumat berulang setiap minggu. Geser papan ke samping untuk melihat hari lainnya pada layar kecil.</p><div class="master-board-scroll" tabindex="0" role="region" aria-label="Jadwal mingguan Senin sampai Jumat"><div class="master-board">
     ${WORKDAYS.map((day) => {
       const dayHours =
         settings.operationalHours[day] || defaultOperationalHours()[day];
@@ -872,7 +835,7 @@ function renderMasterScheduleView() {
         </div>
       </section>`;
     }).join("")}
-  </div>`;
+  </div></div>`;
 }
 
 function renderSettingsView() {
