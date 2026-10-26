@@ -16,9 +16,11 @@ await mkdir(path.join(output, "admin/assets"), { recursive: true });
 for (const item of ["index.html", "styles.css"]) {
   await cp(path.join(root, "admin", item), path.join(output, "admin", item));
 }
-// Reuse the original official logo without redrawing or modifying it.
-const logo = (await readFile(path.join(root, "logo.txt"), "utf8")).trim();
-await writeFile(path.join(output, "admin/assets/pojok-ui.jpg"), Buffer.from(logo.split(",")[1], "base64"));
+// Use the high-resolution PNG supplied by the site owner, without recompression.
+await cp(
+  path.join(root, "logo pojok statistik ui.png"),
+  path.join(output, "admin/assets/pojok-ui-1080.png"),
+);
 // Serve the new workspace at the domain root, with stable absolute asset URLs.
 // Keep /admin/ available for links already shared during the transition.
 const adminHtml = await readFile(path.join(root, "admin/index.html"), "utf8");
