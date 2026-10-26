@@ -563,3 +563,10 @@ Nominal denda, toleransi, jam sesi aktual, dan syarat penghargaan adalah konfigu
 ## 14. Keputusan online yang masih perlu ditinjau
 
 Hari aktif/akhir pekan dan jam pergantian piket online belum disebutkan pengguna; jangan otomatis menyalin jam offline. Usulan awal penentuan tanggal memakai WIB kalender, dengan hari aktif dan jam cakupan yang dapat diatur. Tidak menambahkan denda online otomatis. Mekanisme cadangan saat PJ klien cuti/nonaktif memerlukan alih PJ oleh admin; integrasi pengambilan/pembalasan pesan LINE dan publikasi otomatis Instagram tetap di luar cakupan awal.
+
+
+## Status implementasi layanan online — 27 Oktober 2026
+
+Menu Layanan Online telah diimplementasikan: pola mingguan terpisah per kanal dan jam, masa berlaku, pengecualian tanggal, validasi server untuk agen aktif Pelayanan dan Konsultasi, antrean IG, snapshot petugas saat Terbit, klien dengan PJ tetap, alih PJ beralasan, filter nama/status/PJ, dan catatan serta audit. Bagian dokumen yang sebelumnya menyebut online masih spesifikasi merupakan riwayat tahap sebelumnya.
+
+Batas versi ini: jam tidak lintas tengah malam; tidak ada integrasi API LINE/Instagram; tidak ada denda/durasi offline untuk layanan online. Snapshot publikasi merekam petugas roster saat status Terbit dicatat, bukan identitas pelaksana yang diverifikasi platform. Tidak ada migrasi atau penebakan penugasan historis tanpa roster. Nama divisi resmi dikelola admin pada ps_agents dan kelayakan diperiksa dengan ID agen serta nama divisi persis di server; belum ada tabel master divisi terpisah. UI audit tersedia untuk klien, sementara audit perubahan roster tersimpan di database. Koreksi kontak pertama dan penghapusan riwayat tidak tersedia dalam UI ini.

@@ -28,7 +28,7 @@ class Backend:
         self.user = {'id': ADMIN, 'aud': 'authenticated', 'role': 'authenticated', 'email': 'admin@example.test', 'created_at':'2026-01-01T00:00:00Z','app_metadata':{},'user_metadata':{}}
         self.rows = {
             'ps_agents': [{'id':AGENT,'name':'Agen Integrasi','division':'Pelayanan dan Konsultasi','position':'Anggota','active':True,'period':'2026 / 2027','photo_path':None,'version':1}],
-            'ps_shifts': [], 'ps_posts': [], 'ps_weekly_schedule': [], 'ps_settings': []}
+            'ps_shifts': [], 'ps_posts': [], 'ps_weekly_schedule': [], 'ps_settings': [], 'ps_online_roster': [], 'ps_online_clients': [], 'ps_online_notes': [], 'ps_online_events': []}
     def token(self):
         enc = lambda v: base64.urlsafe_b64encode(json.dumps(v).encode()).decode().rstrip('=')
         jwt = enc({'alg':'HS256'})+'.'+enc({'sub':ADMIN,'exp':int(time.time())+3600,'aud':'authenticated','role':'authenticated'})+'.'+base64.urlsafe_b64encode(b'fixture-signature').decode().rstrip('=')
@@ -64,6 +64,8 @@ class Backend:
         elif '/storage/v1/object/pojok-media/' in path and method=='POST':
             self.uploads.append(path);respond({'Key':path.split('/object/')[1]})
         elif '/storage/v1/object/pojok-media' in path and method=='DELETE':respond([])
+        elif path.endswith('/rest/v1/rpc/ps_online_resolve'):
+            respond(None)
         elif path.endswith('/rest/v1/rpc/ps_import_agents'):
             count=0
             for entry in req.post_data_json['records']:
@@ -83,6 +85,11 @@ class Backend:
             if self.conflict:respond(None);return
             if method=='POST':
                 row=req.post_data_json;row['version']=1
+                if table.startswith('ps_online_'):
+                    row.setdefault('id',str(__import__('uuid').uuid4()))
+                    row.setdefault('created_at','2026-10-26T10:00:00Z')
+                    if table=='ps_online_clients':
+                        row.setdefault('status','Baru');row.setdefault('assignment_source','manual')
                 self.rows[table].append(row)
             else:
                 record_id=query['id'][0].removeprefix('eq.')
@@ -203,7 +210,7 @@ with sync_playwright() as p:
     page.get_by_role('link',name='Konten & Publikasi').click()
     page.get_by_role('button',name='Buat konten',exact=True).click()
     page.get_by_label('Judul konten').fill('Konten Integrasi')
-    choose_agent(page,'Penanggung jawab','Agen Integrasi')
+    choose_agent(page,'PIC produksi','Agen Integrasi')
     page.get_by_label('Caption',exact=True).fill('Caption dari admin.')
     page.get_by_label('Gambar / slide carousel').set_input_files({'name':'slide.png','mimeType':'image/png','buffer':PNG})
     expect(page.locator('#draft-images img')).to_be_visible()
@@ -333,6 +340,54 @@ with sync_playwright() as p:
     assert '2026-10-20' in csv and '2026-10-21' not in csv
     page.get_by_role('link',name='Direktori Agen',exact=True).click()
     expect(page.get_by_label('Filter periode')).to_be_visible()
+
+    # Online workspace uses separate tables and only service agents in selectors.
+    service_id='77777777-7777-4777-8777-777777777777'
+    backend.rows['ps_agents'].append({'id':service_id,'name':'Petugas Layanan','division':'Pelayanan dan Konsultasi','position':'Anggota','active':True,'period':'2026 / 2027','photo_path':None,'version':1})
+    page.reload(wait_until='networkidle')
+    page.get_by_role('link',name='Layanan Online',exact=True).click()
+    page.get_by_role('button',name='Tambah jadwal online',exact=True).click()
+    expect(page.get_by_label('Petugas online')).to_contain_text('Petugas Layanan')
+    assert page.get_by_label('Petugas online').locator('option').count()==2
+    page.get_by_label('Kanal',exact=True).select_option('OA LINE')
+    page.get_by_label('Hari',exact=True).select_option('1')
+    page.get_by_label('Mulai berlaku',exact=True).fill('2026-10-26')
+    page.get_by_label('Jam mulai (WIB)',exact=True).fill('09:00')
+    page.get_by_label('Jam selesai (WIB)',exact=True).fill('17:00')
+    page.get_by_label('Petugas online').select_option(service_id)
+    page.get_by_role('button',name='Simpan jadwal online',exact=True).click()
+    expect(page.locator('#online-editor')).to_be_empty()
+    assert backend.rows['ps_online_roster'][0]['agent_id']==service_id
+    page.screenshot(path=str(out/'online-desktop.png'),full_page=True)
+    page.get_by_role('button',name='Klien OA LINE',exact=True).click()
+    page.get_by_role('button',name='Tambah klien OA LINE',exact=True).click()
+    page.get_by_label('Nama klien',exact=True).fill('Klien Simulasi')
+    page.get_by_label('Waktu chat pertama (WIB)',exact=True).fill('2026-10-26T10:00')
+    expect(page.locator('#online-suggestion')).to_contain_text('Petugas Layanan')
+    page.get_by_label('PJ tetap klien',exact=True).select_option(service_id)
+    page.get_by_label('Alasan penetapan manual',exact=True).fill('Ditinjau admin')
+    page.get_by_label('Ringkasan kebutuhan',exact=True).fill('Konsultasi pengolahan data')
+    backend.fail_write=True
+    page.get_by_role('button',name='Simpan klien',exact=True).click()
+    expect(page.locator('#toast')).to_contain_text('Belum berhasil')
+    expect(page.locator('[data-online-form="client"]')).to_be_visible()
+    assert backend.rows['ps_online_clients']==[]
+    backend.fail_write=False
+    page.get_by_role('button',name='Simpan klien',exact=True).click()
+    expect(page.locator('.online-client')).to_contain_text('Klien Simulasi')
+    assert backend.rows['ps_online_clients'][0]['first_contact_at']=='2026-10-26T03:00:00.000Z'
+    page.locator('.online-client').click()
+    page.get_by_label('Status layanan',exact=True).select_option('Dalam penanganan')
+    page.get_by_role('button',name='Simpan status layanan',exact=True).click()
+    expect(page.locator('body')).not_to_have_class(re.compile(r'\bsaving\b'))
+    expect(page.get_by_label('Status layanan',exact=True)).to_have_value('Dalam penanganan')
+    assert backend.rows['ps_online_clients'][0]['owner_id']==service_id
+    page.get_by_label('Catatan layanan',exact=True).fill('Penjelasan metode sudah diberikan.')
+    page.get_by_role('button',name='Tambah catatan',exact=True).click()
+    expect(page.locator('.online-history')).to_contain_text('Penjelasan metode sudah diberikan.')
+    page.get_by_role('button',name='Tutup formulir',exact=True).click()
+    page.get_by_role('button',name='Publikasi IG',exact=True).click()
+    expect(page.get_by_role('heading',name='Antrean publikasi Instagram')).to_be_visible()
     page.get_by_role('button',name='Keluar',exact=True).click()
     expect(page.locator('#workspace-shell')).to_be_hidden()
     assert page.locator('#main').inner_text()==''
@@ -354,9 +409,10 @@ with sync_playwright() as p:
     mobile.screenshot(path=str(out/'admin-login-mobile.png'),full_page=True)
     login(mobile)
     expect(mobile.get_by_role('heading',name='Selamat datang, Admin.')).to_be_visible()
-    for route in ['agen','kehadiran','konten']:
+    for route in ['agen','kehadiran','konten','online']:
         mobile.goto(args.base_url+'/admin/#'+route,wait_until='networkidle')
         assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth'),route
+    mobile.screenshot(path=str(out/'online-mobile.png'),full_page=True)
     mobile.set_viewport_size({'width':320,'height':700})
     assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
     mobile.set_viewport_size({'width':390,'height':844})
@@ -370,5 +426,5 @@ with sync_playwright() as p:
     assert mobile.locator('#shift-form [name="agent"]').input_value()==AGENT
     assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors,errors
-    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker','active period and default profile period','invalid operational hours rejected','filtered CSV download','search retains keyboard focus','legacy routes removed'],'screenshots':str(out)}))
+    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker','active period and default profile period','invalid operational hours rejected','filtered CSV download','search retains keyboard focus','legacy routes removed','online roster eligibility UI','online client save and failed write','WIB contact time','stable client owner','online service notes and IG queue'],'screenshots':str(out)}))
     browser.close()

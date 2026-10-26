@@ -104,4 +104,20 @@ Pengujian: `npm test`, `npm run build`, lalu `python3 tests/browser_admin.py` de
 
 ## Koreksi denda PJ offline
 
-PJ sesi tetap dikenai denda bolos bila statusnya Tidak hadir. Pengecualian keterlambatan PJ, izin/sakit, serta sesi sukarelawan dipertahankan. Koreksi berlaku pada perhitungan seluruh catatan, termasuk PJ Tidak hadir yang sudah tersimpan; nominal tetap mengikuti rules_snapshot jika tersedia. Tidak ada perubahan status pembayaran atau penulisan ulang record. Layanan jaga online IG/OA LINE khusus Pelayanan dan Konsultasi masih berupa spesifikasi, belum fitur aplikasi.
+PJ sesi tetap dikenai denda bolos bila statusnya Tidak hadir. Pengecualian keterlambatan PJ, izin/sakit, serta sesi sukarelawan dipertahankan. Koreksi berlaku pada perhitungan seluruh catatan, termasuk PJ Tidak hadir yang sudah tersimpan; nominal tetap mengikuti rules_snapshot jika tersedia. Tidak ada perubahan status pembayaran atau penulisan ulang record. Layanan jaga online IG/OA LINE tersedia pada menu Layanan Online setelah migrasi fitur online diterapkan.
+
+
+## Layanan Online — Instagram & OA LINE
+
+Migrasi: `supabase/migrations/20261026151157_online_duty_and_client_services.sql`. Hanya admin workspace dapat membaca atau menulis data online. Migrasi menambah empat tabel online, trigger validasi/audit, serta kolom petugas publikasi pada konten. Data offline dan aturan dendanya tidak diubah.
+
+- **Jadwal Online:** pilih kanal, hari, periode berlaku, jam mulai/selesai WIB, dan agen aktif Pelayanan dan Konsultasi. Tidak ada hari/jam default yang dianggap wajib. Jadwal berulang mingguan. Akhiri masa berlaku untuk pergantian pola; pengecualian harian wajib beralasan dan dapat menandai tidak ada petugas. Satu kanal/hari tidak boleh memiliki dua pola yang rentang berlakunya bertabrakan. Waktu akhir tidak termasuk cakupan. Jam lintas tengah malam belum didukung.
+- **Publikasi IG:** antrean mengikuti tanggal konten, membedakan PIC produksi dari petugas publikasi. Form/detail konten menampilkan petugas sesuai tanggal/jam. Saat pertama ditandai Terbit, database menyimpan petugas yang ditentukan roster; perubahan jadwal selanjutnya tidak menimpanya. Publikasi lama atau publikasi tanpa jadwal ditandai belum tercatat, bukan ditebak. Ini pencatatan petugas terjadwal; bukan bukti API bahwa orang tersebut benar-benar menekan tombol publikasi.
+- **Klien OA LINE:** waktu kontak pertama dimasukkan dalam WIB dan disimpan sebagai timestamptz. Database menetapkan PJ dari jadwal pada waktu tersebut, bukan waktu input. Jika tidak ada petugas, klien masuk daftar belum ditetapkan atau dapat diberi PJ manual dengan alasan. Nama tidak unik; ID LINE yang diisi tidak boleh duplikat. Identitas/ringkasan dapat diperbaiki, sedangkan kontak pertama tidak ditimpa melalui form.
+- **Alih PJ:** hanya admin, ke agen aktif Pelayanan dan Konsultasi, dengan alasan. Pergantian hari atau roster tidak mengalihkan klien lama. Riwayat perubahan dan catatan layanan tersimpan secara append-only; tidak ada tombol menghapus riwayat. Agen yang menjadi nonaktif/berpindah divisi ditandai perlu ditinjau; data klien tidak dihapus.
+- **Batas integrasi:** belum membaca atau mengirim pesan LINE, belum memposting ke Instagram, tidak menambah menit/sesi offline, tidak menerapkan denda online.
+
+Validasi lokal: tes database untuk RLS anon/nonadmin, kelayakan petugas, benturan jadwal, prioritas pengecualian, PJ tetap, alasan transfer, keunikan ID LINE, catatan append-only, dan petugas publikasi tersimpan. Tes browser menggunakan HTTP simulasi untuk alur UI, kegagalan simpan, timezone WIB, serta desktop/mobile. Konektivitas produksi diperiksa terpisah.
+
+
+Verifikasi penerapan 27 Oktober 2026: migrasi online sudah diterapkan melalui koneksi Supabase pada proyek yang digunakan aplikasi. Uji transaksi dengan role admin pada database produksi berhasil membuat roster, menetapkan PJ klien, mengalihkan PJ beserta audit, dan menambah catatan; seluruh record uji di-rollback. Tes browser tetap memakai mock HTTP dan tidak membuktikan login UI produksi. Security Advisor tidak menambahkan temuan untuk objek online baru; temuan lama masih ada pada pengaturan_sistem (RLS belum aktif), hak eksekusi fungsi legacy, dan pengaturan proteksi password. Temuan lama memerlukan peninjauan terpisah dan bukan alasan membuka akses tabel online.

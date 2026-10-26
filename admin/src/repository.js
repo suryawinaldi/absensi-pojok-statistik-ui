@@ -186,6 +186,7 @@ function rowToModel(collection, row, signed) {
     format: row.format,
     status: row.status,
     agent: row.agent_id,
+    onlinePublisher: row.online_publisher_id || null,
     category: row.category,
     brief: row.brief,
     caption: row.caption,
@@ -417,7 +418,7 @@ export function createRepository(
         const canonical = { ...row, _version: data.version };
         if (collection === "shifts") canonical.rulesSnapshot = data.rules_snapshot || null;
         if (collection === "agents") canonical._photoPath = data.photo_path;
-        if (collection === "posts") canonical._imagePaths = data.image_paths;
+        if (collection === "posts") { canonical._imagePaths = data.image_paths; canonical.onlinePublisher = data.online_publisher_id || null; }
         result[collection][index] = canonical;
       } else
         obsolete =

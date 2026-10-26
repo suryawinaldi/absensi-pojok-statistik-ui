@@ -1,3 +1,4 @@
+import { createOnlineWorkspace } from "./online.js";
 import { csvCell } from "./csv.js";
 import { divisionChoices } from "./agent-divisions.js";
 import {
@@ -149,6 +150,16 @@ let page = "beranda",
 let toastTimer, lastFocused;
 const dialog = document.querySelector("#detail-dialog");
 const main = document.querySelector("#main");
+const online = createOnlineWorkspace({
+  client, root: main, state: () => state,
+  allowed: () => authorized, active: () => authorized && page === "online",
+  busy: () => operationPending,
+  setBusy: value => {
+    operationPending = value;
+    document.body.classList.toggle("saving", value);
+    document.querySelector("#connection-status").textContent = !authorized ? "Belum masuk" : value ? "Menyimpan…" : "Terhubung";
+  }, toast, showPost,
+});
 const findAgent = (agentId) => state.agents.find((a) => a.id === agentId);
 const agentName = (agentId) => findAgent(agentId)?.name || "Belum ditentukan";
 const validImage = repository.isSafeMedia;
@@ -415,6 +426,7 @@ function renderNav() {
     ["agen", "users", "Direktori Agen"],
     ["kehadiran", "calendar", "Jadwal & Kehadiran"],
     ["konten", "content", "Konten & Publikasi"],
+    ["online", "mail", "Layanan Online"],
   ];
   document.querySelector("#navigation").innerHTML = items
     .map(
@@ -435,6 +447,7 @@ function render() {
   if (page === "agen") renderAgents();
   if (page === "kehadiran") renderAttendance();
   if (page === "konten") renderContent();
+  if (page === "online") void online.render();
 }
 
 function renderRankingChart(items, mode) {
@@ -1151,7 +1164,7 @@ function editAgent(agentId) {
   openDialog(
     agentId ? "Edit profil agen" : "Tambah agen",
     "DIREKTORI AGEN",
-    `<form id="agent-form" data-id="${esc(agentId || "")}"><label class="form-field"><span>Nama lengkap</span><input class="input" name="name" required maxlength="80" value="${esc(a.name)}" placeholder="Nama lengkap agen"></label><label class="form-field"><span>Divisi</span><select name="division" required><option value="">Pilih divisi</option>${options(availableDivisions(a.division), a.division)}</select></label><label class="form-field"><span>Jabatan</span><input class="input" name="position" list="position-options" autocomplete="off" required maxlength="60" value="${esc(a.position)}"><datalist id="position-options">${positionSuggestions(a.division, a.position)}</datalist><small class="help" id="position-help"></small></label><label class="form-field"><span>Periode kepengurusan</span><input class="input" name="period" maxlength="80" required value="${esc(a.period || activeSettings().activePeriod)}"></label><label class="form-field"><span>Status</span><select name="active"><option value="true" ${a.active ? "selected" : ""}>Aktif</option><option value="false" ${!a.active ? "selected" : ""}>Nonaktif</option></select></label><div id="position-shortcuts" class="position-shortcuts" aria-label="Saran jabatan"></div><p class="profile-note">Menambahkan agen hanya membuat profil anggota. Tidak ada akun atau kredensial yang dibuat.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan profil</button></div></form>`,
+    `<form id="agent-form" data-id="${esc(agentId || "")}"><label class="form-field"><span>Nama lengkap</span><input class="input" name="name" required maxlength="80" value="${esc(a.name)}" placeholder="Nama lengkap agen"></label><label class="form-field"><span>Divisi</span><select name="division" required><option value="">Pilih divisi</option>${options(availableDivisions(a.division), a.division)}</select></label><label class="form-field"><span>Jabatan</span><input class="input" name="position" list="position-options" autocomplete="off" required maxlength="60" value="${esc(a.position)}"><datalist id="position-options">${positionSuggestions(a.division, a.position)}</datalist><small class="help" id="position-help"></small></label><label class="form-field"><span>Periode kepengurusan</span><input class="input" name="period" maxlength="80" required value="${esc(a.period || activeSettings().activePeriod)}"></label><label class="form-field"><span>Status</span><select name="active"><option value="true" ${a.active ? "selected" : ""}>Aktif</option><option value="false" ${!a.active ? "selected" : ""}>Nonaktif</option></select></label><div id="position-shortcuts" class="position-shortcuts" aria-label="Saran jabatan"></div><p class="profile-note">Menambahkan agen hanya membuat profil anggota. Perubahan divisi atau status aktif dapat membuat jadwal online memerlukan pengganti; PJ klien lama tidak otomatis berubah.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan profil</button></div></form>`,
   );
   updatePositionSuggestions();
 }
@@ -1162,7 +1175,7 @@ function showPost(postId) {
   openDialog(
     p.title,
     "DETAIL KONTEN · INSTAGRAM",
-    `<div class="content-meta">${badge(p.status)}<span class="division-label" style="margin:0">${esc(p.format)}</span><span class="division-label" style="margin:0">${esc(p.category || "Umum")}</span></div><dl class="profile-data"><div><dt>Rencana publikasi</dt><dd>${formatDate(p.date)}<br>${esc(p.time)} WIB</dd></div><div><dt>Penanggung jawab</dt><dd>${esc(agentName(p.agent))}</dd></div></dl><section class="profile-section"><h3>Brief konten</h3><p class="help">${esc(p.brief || "Belum ada brief.")}</p></section><section class="profile-section"><h3>Caption</h3><div class="content-caption">${esc(p.caption || "Caption belum ditulis.")}</div></section><section class="profile-section"><h3>Materi visual <span class="pill-count">${p.images.length}</span></h3><div class="media-preview">${p.images
+    `<div class="content-meta">${badge(p.status)}<span class="division-label" style="margin:0">${esc(p.format)}</span><span class="division-label" style="margin:0">${esc(p.category || "Umum")}</span></div><dl class="profile-data"><div><dt>Rencana publikasi</dt><dd>${formatDate(p.date)}<br>${esc(p.time)} WIB</dd></div><div><dt>PIC produksi</dt><dd>${esc(agentName(p.agent))}</dd></div></dl><p class="banner" id="post-publisher-detail" role="status"></p><section class="profile-section"><h3>Brief konten</h3><p class="help">${esc(p.brief || "Belum ada brief.")}</p></section><section class="profile-section"><h3>Caption</h3><div class="content-caption">${esc(p.caption || "Caption belum ditulis.")}</div></section><section class="profile-section"><h3>Materi visual <span class="pill-count">${p.images.length}</span></h3><div class="media-preview">${p.images
       .filter(validImage)
       .map(
         (src, i) =>
@@ -1172,6 +1185,7 @@ function showPost(postId) {
         "",
       )}</div>${!p.images.length ? '<p class="help">Belum ada gambar. Unggah materi melalui Edit konten.</p>' : ""}</section>${url ? `<section class="profile-section"><h3>Tautan publikasi</h3><a class="text-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Buka di Instagram ${icon("arrow")}</a></section>` : ""}<p class="profile-note">Penjadwalan ini adalah agenda tim. Publikasi dilakukan manual di Instagram, lalu dicatat oleh admin.</p><div class="dialog-footer"><button class="button danger" data-action="delete-post" data-id="${esc(p.id)}">Hapus konten</button><button class="button primary" data-action="edit-post" data-id="${esc(p.id)}">${icon("edit")}Edit konten</button></div>`,
   );
+  void online.publicationPreview(document.querySelector("#post-publisher-detail"), p);
 }
 let draftImages = [],
   mediaBusy = false;
@@ -1193,9 +1207,10 @@ function editPost(postId, date) {
   openDialog(
     postId ? "Edit konten" : "Rencanakan konten",
     "KALENDER EDITORIAL",
-    `<form id="post-form" data-id="${esc(postId || "")}"><label class="form-field"><span>Judul konten</span><input class="input" name="title" required maxlength="120" value="${esc(p.title)}" placeholder="Cerita apa yang ingin dibagikan?"></label><div class="form-row"><label class="form-field"><span>Tanggal publikasi</span><input class="input" name="date" type="date" required value="${p.date}"></label><label class="form-field"><span>Jam publikasi (WIB)</span><input class="input" name="time" type="time" required value="${p.time}"></label></div><div class="form-row"><label class="form-field"><span>Format</span><select name="format">${options(["Feed", "Carousel", "Reel", "Story"], p.format)}</select></label><label class="form-field"><span>Status</span><select name="status" id="post-status">${options(statuses, p.status)}</select></label></div><label class="form-field"><span>Penanggung jawab</span><select name="agent" required>${agentOptions(p.agent)}</select></label><label class="form-field"><span>Kategori / program</span><input class="input" name="category" maxlength="60" value="${esc(p.category)}" placeholder="Contoh: Cerita Data"></label><label class="form-field"><span>Brief & detail pengerjaan</span><textarea name="brief" maxlength="4000" placeholder="Tujuan, sumber data, isi setiap slide, dan catatan untuk tim...">${esc(p.brief)}</textarea></label><label class="form-field"><span>Caption</span><textarea name="caption" maxlength="2200" placeholder="Tulis caption dan hashtag...">${esc(p.caption)}</textarea></label><label class="form-field"><span>Gambar / slide carousel</span><input id="post-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><small class="help">Maksimal 4 gambar, 5 MB per gambar. Urutan unggah menjadi urutan slide. Untuk video, cantumkan tautan materi dalam brief.</small></label><div class="media-preview" id="draft-images"></div><label class="form-field" style="margin-top:20px"><span>Tautan postingan Instagram</span><input class="input" name="link" id="post-link" type="url" value="${esc(p.link)}" placeholder="https://www.instagram.com/p/..." ${p.status === "Terbit" ? "required" : ""}><small class="help">Wajib diisi saat status Terbit. Jadwal tidak memposting otomatis.</small></label><div class="dialog-footer"><button class="button" type="button" data-action="close">Batal</button><button class="button primary" id="save-post" type="submit">Simpan konten</button></div></form>`,
+    `<form id="post-form" data-id="${esc(postId || "")}"><label class="form-field"><span>Judul konten</span><input class="input" name="title" required maxlength="120" value="${esc(p.title)}" placeholder="Cerita apa yang ingin dibagikan?"></label><div class="form-row"><label class="form-field"><span>Tanggal publikasi</span><input class="input" name="date" type="date" required value="${p.date}"></label><label class="form-field"><span>Jam publikasi (WIB)</span><input class="input" name="time" type="time" required value="${p.time}"></label></div><div class="form-row"><label class="form-field"><span>Format</span><select name="format">${options(["Feed", "Carousel", "Reel", "Story"], p.format)}</select></label><label class="form-field"><span>Status</span><select name="status" id="post-status">${options(statuses, p.status)}</select></label></div><label class="form-field"><span>PIC produksi</span><select name="agent" required>${agentOptions(p.agent)}</select></label><p class="banner" id="post-publisher-preview" role="status"></p><label class="form-field"><span>Kategori / program</span><input class="input" name="category" maxlength="60" value="${esc(p.category)}" placeholder="Contoh: Cerita Data"></label><label class="form-field"><span>Brief & detail pengerjaan</span><textarea name="brief" maxlength="4000" placeholder="Tujuan, sumber data, isi setiap slide, dan catatan untuk tim...">${esc(p.brief)}</textarea></label><label class="form-field"><span>Caption</span><textarea name="caption" maxlength="2200" placeholder="Tulis caption dan hashtag...">${esc(p.caption)}</textarea></label><label class="form-field"><span>Gambar / slide carousel</span><input id="post-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><small class="help">Maksimal 4 gambar, 5 MB per gambar. Urutan unggah menjadi urutan slide. Untuk video, cantumkan tautan materi dalam brief.</small></label><div class="media-preview" id="draft-images"></div><label class="form-field" style="margin-top:20px"><span>Tautan postingan Instagram</span><input class="input" name="link" id="post-link" type="url" value="${esc(p.link)}" placeholder="https://www.instagram.com/p/..." ${p.status === "Terbit" ? "required" : ""}><small class="help">Wajib diisi saat status Terbit. Jadwal tidak memposting otomatis.</small></label><div class="dialog-footer"><button class="button" type="button" data-action="close">Batal</button><button class="button primary" id="save-post" type="submit">Simpan konten</button></div></form>`,
   );
   renderDraftImages();
+  void online.publicationPreview(document.querySelector("#post-publisher-preview"), p);
 }
 function renderDraftImages() {
   const el = document.querySelector("#draft-images");
@@ -1804,6 +1819,12 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", async (e) => {
   const el = e.target;
+  if (["date", "time"].includes(el.name) && el.closest("#post-form")) {
+    const form = el.closest("#post-form"), saved = state.posts.find(p => p.id === form.dataset.id);
+    void online.publicationPreview(document.querySelector("#post-publisher-preview"), {
+      ...saved, date: form.elements.date.value, time: form.elements.time.value,
+    });
+  }
   if (el.name === "division" && el.closest("#agent-form"))
     updatePositionSuggestions();
   switch (el.id) {
@@ -2227,14 +2248,14 @@ document.addEventListener("submit", async (e) => {
 window.addEventListener("hashchange", () => {
   if (!authorized || operationPending) return;
   const next = location.hash.slice(1);
-  page = ["beranda", "agen", "kehadiran", "konten"].includes(next)
+  page = ["beranda", "agen", "kehadiran", "konten", "online"].includes(next)
     ? next
     : "beranda";
   if (dialog.open) closeDialog();
   render();
   window.scrollTo(0, 0);
 });
-page = ["beranda", "agen", "kehadiran", "konten"].includes(
+page = ["beranda", "agen", "kehadiran", "konten", "online"].includes(
   location.hash.slice(1),
 )
   ? location.hash.slice(1)
@@ -2259,6 +2280,7 @@ function clearWorkspace(message = "") {
   sessionEpoch++;
   authorized = false;
   state = emptyState();
+  online.reset();
   main.replaceChildren();
   document.querySelector("#navigation").replaceChildren();
   document.querySelector("#dialog-content").replaceChildren();
