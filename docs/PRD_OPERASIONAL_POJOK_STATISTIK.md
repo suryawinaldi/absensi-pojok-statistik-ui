@@ -236,7 +236,7 @@ Panel **Jam Operasional & Aturan → Kebijakan Denda** menyediakan:
 - Batas menit tiap tingkatan dan nominal rupiah total yang berlaku pada tingkatan tersebut.
 - Batas maksimal nominal denda telat, opsional; jika aktif diterapkan setelah penentuan tarif. Tidak otomatis membatasi denda ketidakhadiran yang mempunyai pengaturan sendiri.
 - Nominal khusus **Tidak hadir tanpa izin**, terpisah dari tarif telat.
-- Pengecualian PJ yang dapat ditetapkan secara eksplisit. Sukarelawan, izin, dan sakit yang disahkan tetap bebas denda.
+- PJ offline tetap dikenai denda bolos (status Tidak hadir); pengecualian keterlambatan PJ dipertahankan. Sukarelawan, izin, dan sakit yang disahkan tetap bebas denda.
 - Nama kebijakan, periode, tanggal mulai berlaku, dan cakupan hari/sesi.
 - Pratinjau/simulator sebelum publikasi: pilih sesi, jam datang, status, dan peran untuk melihat nominal serta alasan perhitungannya.
 
@@ -554,7 +554,7 @@ Ukuran awal berupa kriteria teramati, bukan klaim angka hasil yang belum diukur:
 | Susunan jadwal — sudah dikonfirmasi     | Tetap berulang setiap minggu; perubahan hanya bila diperlukan                                    | Pola tersimpan berlaku otomatis, pengecualian bersifat opsional |
 | Aturan denda — sudah dikonfirmasi       | Toleransi dan nominal bertingkat dapat diedit; tarif bolos terpisah; izin sah selalu bebas denda | Konfigurasi fleksibel tidak boleh menimpa pengecualian izin     |
 | Haruskah jam pulang dicatat?            | Opsional pada rilis awal; ketiadaannya selalu berlabel estimasi                                  | Mengurangi beban admin tanpa mengklaim durasi presisi           |
-| PJ bebas denda?                         | Usulan kompatibilitas legacy: iya, terlihat sebagai kebijakan sampai ditinjau                    | Tidak dijadikan asumsi permanen tersembunyi                     |
+| PJ bebas denda?                         | Koreksi pengguna: bolos tetap didenda; pengecualian keterlambatan dipertahankan                    | Tidak dijadikan asumsi permanen tersembunyi                     |
 | Satu Star Agent atau beberapa kategori? | Beberapa kategori; pemenang tunggal menunggu aturan                                              | Menjaga apresiasi sukarela dan kepatuhan tetap bermakna         |
 | Izin/sakit masuk denominator?           | Dikeluarkan dari kewajiban efektif; jumlahnya tetap ditampilkan                                  | Rasio transparan dan dapat diaudit                              |
 

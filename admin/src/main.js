@@ -735,9 +735,9 @@ function renderDailyAttendanceView() {
                 const dur = calcShiftDuration(s);
                 const fine = calcShiftFine(s);
                 const roleLabel = s.extra
-                  ? `<span class="status green">Agen Ekstra</span><br><small class="muted">Sukarelawan · Kebal denda</small>`
+                  ? `<span class="status green">Agen Ekstra</span><br><small class="muted">Sukarelawan · Bebas denda</small>`
                   : s.pj
-                    ? `<span class="status blue">PJ sesi</span><br><small class="muted">Bebas denda</small>`
+                    ? `<span class="status blue">PJ sesi</span><br><small class="muted">Bolos tetap kena denda</small>`
                     : `Anggota${s.fromMaster ? `<br><small class="muted">Jadwal master</small>` : ""}`;
                 const timeAndDur =
                   s.status === "Hadir" && s.time
@@ -885,7 +885,7 @@ function renderSettingsView() {
 
       <div class="settings-rules">
         <h3>Aturan Toleransi & Kas Denda</h3>
-        <p class="help">Denda hanya berlaku untuk jadwal reguler anggota biasa. <strong>PJ Sesi</strong>, <strong>Agen Ekstra (Sukarelawan)</strong>, serta status <strong>Izin / Sakit</strong> otomatis bebas denda.</p>
+        <p class="help">Denda bolos berlaku untuk anggota dan <strong>PJ Sesi</strong> dengan status Tidak hadir. PJ tetap bebas denda keterlambatan. <strong>Agen Ekstra (Sukarelawan)</strong> serta status <strong>Izin / Sakit</strong> tetap bebas denda.</p>
         <div class="form-row" style="margin-top:14px">
           <label class="form-field">
             <span>Toleransi keterlambatan (menit)</span>

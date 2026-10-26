@@ -86,3 +86,18 @@ test("division choices include both distinct divisions and preserve existing lab
   assert.equal(shiftFine(shift, { lateFineAmount: 9000, lateToleranceMinutes: 90 }, {start:"11:00"}).amount, 5000);
   assert.equal(durationMinutes(shift, { active: false, start: "11:00", end: "11:30" }), 120);
 }
+
+
+test("offline PJ is fined for absence, with captured tariff, but retains other exemptions", () => {
+  const pj = { pj: true, extra: false, status: "Tidak hadir" };
+  assert.deepEqual(shiftFine(pj, settings, session), {
+    amount: 20000, reason: "Tidak hadir (Bolos)", exempt: false,
+  });
+  assert.equal(shiftFine({ ...pj, rulesSnapshot: {
+    ...settings, absentFineAmount: 12000, session,
+  } }, settings, session).amount, 12000);
+  for (const status of ["Izin", "Sakit", "Belum dicatat", "Hadir"]) {
+    assert.equal(shiftFine({ ...pj, status, time: "11:00" }, settings, session).amount, 0);
+  }
+  assert.equal(shiftFine({ ...pj, extra: true }, settings, session).amount, 0);
+});

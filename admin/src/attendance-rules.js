@@ -27,13 +27,15 @@ export function shiftFine(shift, settings, session) {
   session = shift.rulesSnapshot?.session || session;
   // Volunteer exemption is unconditional: arrival time, grace period, or any
   // configured late/absence amount must never turn a helper into a debtor.
-  if (shift.extra || shift.pj) return { amount: 0, reason: "", exempt: true };
+  if (shift.extra) return { amount: 0, reason: "", exempt: true };
   if (shift.status === "Tidak hadir")
     return {
       amount: settings.absentFineAmount,
       reason: "Tidak hadir (Bolos)",
       exempt: false,
     };
+  // PJ remains exempt from lateness only, never from an unexcused absence.
+  if (shift.pj) return { amount: 0, reason: "", exempt: true };
   if (shift.status === "Hadir") {
     const start = minutes(session.start),
       arrival = minutes(shift.time);

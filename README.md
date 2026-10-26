@@ -100,3 +100,8 @@ Sebelum menerbitkan frontend ini, terapkan migrasi `supabase/migrations/20261026
 - Ekspor denda mengikuti filter pencarian dan pembayaran. Pengujian browser memeriksa file unduhan sebenarnya. Nilai teks CSV dinetralkan agar tidak menjadi formula spreadsheet.
 
 Pengujian: `npm test`, `npm run build`, lalu `python3 tests/browser_admin.py` dengan server statis lokal. Tes database mencakup snapshot historis, penolakan manipulasi snapshot, penguncian pembayaran, validasi periode/jam, dan akses nonadmin. Browser mencakup periode aktif, validasi jam, serta ekspor terfilter. Semua tes tetap lokal/simulasi.
+
+
+## Koreksi denda PJ offline
+
+PJ sesi tetap dikenai denda bolos bila statusnya Tidak hadir. Pengecualian keterlambatan PJ, izin/sakit, serta sesi sukarelawan dipertahankan. Koreksi berlaku pada perhitungan seluruh catatan, termasuk PJ Tidak hadir yang sudah tersimpan; nominal tetap mengikuti rules_snapshot jika tersedia. Tidak ada perubahan status pembayaran atau penulisan ulang record. Layanan jaga online IG/OA LINE khusus Pelayanan dan Konsultasi masih berupa spesifikasi, belum fitur aplikasi.
