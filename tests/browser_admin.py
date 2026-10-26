@@ -128,6 +128,9 @@ with sync_playwright() as p:
     login(page)
     expect(page.get_by_role('heading',name='Selamat datang, Admin.')).to_be_visible()
     assert 'Nadia' not in page.locator('#main').inner_text(), 'Demo records leaked into production UI'
+    expect(page.locator('.sidebar-note strong')).to_have_text('Pojok Statistik UI')
+    expect(page.locator('.sidebar-note p')).to_have_text('Tempat Asyik Belajar Statistik')
+    page.screenshot(path=str(out/'home-desktop.png'),full_page=True)
     page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
     page.get_by_role('button',name='Jam Buka & Tutup',exact=True).click()
     page.get_by_label('Periode kepengurusan aktif',exact=True).fill('2027 / 2028')
@@ -142,6 +145,7 @@ with sync_playwright() as p:
     expect(page.locator('.semester')).to_contain_text('2027 / 2028')
     page.get_by_role('button',name='Absensi Harian',exact=True).click()
     page.get_by_role('link',name='Direktori Agen').click()
+    expect(page.get_by_label('Cari agen',exact=True)).to_have_attribute('placeholder','Ketik nama')
     page.get_by_role('button',name='Tambah agen',exact=True).click()
     page.get_by_label('Nama lengkap').fill('Agen Tersimpan')
     expect(page.get_by_label('Divisi',exact=True)).to_contain_text('Pelayanan dan Konsultasi')

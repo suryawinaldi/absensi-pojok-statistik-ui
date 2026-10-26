@@ -40,7 +40,7 @@ export function enhanceAgentPickers(root, agents) {
       "aria-label",
       select.getAttribute("aria-label") || "Cari agen",
     );
-    input.placeholder = "Ketik nama, misalnya su…";
+    input.placeholder = "Ketik nama";
     input.autocomplete = "off";
     input.spellcheck = false;
     input.disabled = select.disabled;
