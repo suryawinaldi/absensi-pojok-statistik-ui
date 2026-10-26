@@ -7,3 +7,6 @@ admin/assets/app.js.map
 !.env.example
 __pycache__/
 *.pyc
+
+work/
+supabase/.temp/

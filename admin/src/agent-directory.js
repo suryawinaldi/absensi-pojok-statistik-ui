@@ -59,11 +59,12 @@ function roleRank(agent) {
 }
 export function directoryAgents(
   agents,
-  { query = "", division = "", role = "", sort = "division" } = {},
+  { query = "", division = "", role = "", period = "", sort = "division" } = {},
 ) {
   const list = matchingAgents(agents, query).filter(
     (a) =>
       (!division || a.division === division) &&
+      (!period || a.period === period) &&
       (!role || positionKind(a) === role),
   );
   const byName = (a, b) =>

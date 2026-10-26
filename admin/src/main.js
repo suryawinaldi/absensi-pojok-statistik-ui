@@ -1,3 +1,4 @@
+import { csvCell } from "./csv.js";
 import { divisionChoices } from "./agent-divisions.js";
 import {
   directoryAgents,
@@ -131,6 +132,7 @@ let page = "beranda",
   agentSearch = "",
   divisionFilter = "",
   agentRoleFilter = "",
+  agentPeriodFilter = "",
   agentSort = "division",
   contentFilter = "",
   calendarMonth = BASE,
@@ -157,6 +159,7 @@ function activeSettings() {
   if (!saved) {
     return {
       id: SETTINGS_ID,
+      activePeriod: "2026 / 2027",
       lateToleranceMinutes: 15,
       lateFineAmount: 5000,
       absentFineAmount: 10000,
@@ -380,13 +383,9 @@ async function updateMany(mutators, message) {
 }
 
 function downloadCsv(filename, headers, rows) {
-  const escapeCsv = (val) => {
-    const str = String(val ?? "");
-    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-  };
   const csv = [
     headers.join(","),
-    ...rows.map((r) => r.map(escapeCsv).join(",")),
+    ...rows.map((r) => r.map(csvCell).join(",")),
   ].join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
@@ -395,6 +394,7 @@ function downloadCsv(filename, headers, rows) {
   document.body.appendChild(link);
   link.click();
   link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
 function header(eyebrow, title, description, actions = "") {
@@ -430,6 +430,7 @@ function renderNav() {
 function render() {
   if (!authorized) return;
   renderNav();
+  document.querySelector(".semester").textContent = `PERIODE ${activeSettings().activePeriod}`;
   if (page === "beranda") renderHome();
   if (page === "agen") renderAgents();
   if (page === "kehadiran") renderAttendance();
@@ -507,7 +508,7 @@ function renderHome() {
       `<a href="#kehadiran" class="button">${icon("calendar")}Lihat jadwal</a><button class="button primary" data-action="new-post">${icon("plus")}Buat konten</button>`,
     ) +
     `<section class="hero" aria-label="Ringkasan hari ini"><div class="hero-copy"><p class="eyebrow">${formatDate(TODAY, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p><h2>Kontribusi kecil.<br>Dampak yang berarti.</h2><p>Ada ${shifts.length} penugasan jaga dan ${state.posts.filter((p) => p.date === TODAY).length} agenda publikasi hari ini. Mari pastikan semuanya berjalan baik.</p><a href="#kehadiran" class="text-button hero-link">Kelola aktivitas hari ini ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><span class="art-star">✳</span><div class="art-bar"></div><div class="art-bar"></div><div class="art-bar"></div></div></section>` +
-    `<section class="metrics" aria-label="Ringkasan operasional">${metric("Agen aktif", state.agents.filter((a) => a.active).length, "agen", "Dalam periode kepengurusan ini", "users")}${metric("Kehadiran hari ini", present, `/ ${shifts.length}`, `${pending} penugasan belum dicatat`, "check")}${metric("Menunggu review", review.length, "konten", "Perlu pemeriksaan admin", "review")}${metric("Publikasi bulan ini", state.posts.filter((p) => p.status === "Terbit" && p.date.startsWith(BASE)).length, "konten", monthLabel(BASE), "content")}</section>` +
+    `<section class="metrics" aria-label="Ringkasan operasional">${metric("Agen aktif", state.agents.filter((a) => a.active).length, "agen", "Profil berstatus aktif", "users")}${metric("Kehadiran hari ini", present, `/ ${shifts.length}`, `${pending} penugasan belum dicatat`, "check")}${metric("Menunggu review", review.length, "konten", "Perlu pemeriksaan admin", "review")}${metric("Publikasi bulan ini", state.posts.filter((p) => p.status === "Terbit" && p.date.startsWith(BASE)).length, "konten", monthLabel(BASE), "content")}</section>` +
     `<div class="dashboard-grid"><div class="panel"><div class="panel-header"><div><h2 class="panel-title">Jadwal jaga hari ini</h2><p class="panel-description">${formatDate(TODAY, { weekday: "long", day: "numeric", month: "long" })} · Otomatis dari Jadwal Master & penugasan</p></div><a class="text-button" href="#kehadiran">Lihat semua ${icon("arrow")}</a></div><div class="table-scroll"><table><thead><tr><th>AGEN</th><th>SESI</th><th>STATUS</th></tr></thead><tbody>${
       shifts.length
         ? shifts
@@ -593,7 +594,7 @@ function showCertificate(agentId) {
   const entry = stats.find((s) => s.agent.id === agentId) || stats[0];
   if (!entry) return;
   const periodText =
-    analyticsScope === "month" ? monthLabel(BASE) : "Periode 2026 / 2027";
+    analyticsScope === "month" ? monthLabel(BASE) : "Seluruh riwayat kontribusi";
   openDialog(
     "Sertifikat Apresiasi Digital",
     "PENGHARGAAN POJOK STATISTIK UI",
@@ -625,6 +626,7 @@ function agentCards() {
     query: agentSearch,
     division: divisionFilter,
     role: agentRoleFilter,
+    period: agentPeriodFilter,
     sort: agentSort,
   });
 }
@@ -643,7 +645,7 @@ function renderAgents() {
       )
       .join(
         "",
-      )}</select><select id="agent-role-filter" aria-label="Filter jabatan"><option value="">Semua jabatan</option><option value="pi" ${agentRoleFilter === "pi" ? "selected" : ""}>Pengurus Inti</option><option value="bph" ${agentRoleFilter === "bph" ? "selected" : ""}>BPH</option><option value="anggota" ${agentRoleFilter === "anggota" ? "selected" : ""}>Anggota</option><option value="other" ${agentRoleFilter === "other" ? "selected" : ""}>Jabatan lain</option></select><select id="agent-sort" aria-label="Urutkan agen"><option value="division" ${agentSort === "division" ? "selected" : ""}>Divisi & jabatan</option><option value="name-asc" ${agentSort === "name-asc" ? "selected" : ""}>Nama A–Z</option><option value="name-desc" ${agentSort === "name-desc" ? "selected" : ""}>Nama Z–A</option></select></div><span class="result-count" id="agent-count" aria-live="polite"></span></div><p class="directory-help">Cari potongan nama di bagian mana pun. Edit nama, divisi, dan jabatan melalui tombol Edit profil.</p><div class="agent-grid" id="agent-grid"></div>`;
+      )}</select><select id="agent-role-filter" aria-label="Filter jabatan"><option value="">Semua jabatan</option><option value="pi" ${agentRoleFilter === "pi" ? "selected" : ""}>Pengurus Inti</option><option value="bph" ${agentRoleFilter === "bph" ? "selected" : ""}>BPH</option><option value="anggota" ${agentRoleFilter === "anggota" ? "selected" : ""}>Anggota</option><option value="other" ${agentRoleFilter === "other" ? "selected" : ""}>Jabatan lain</option></select><select id="agent-period-filter" aria-label="Filter periode"><option value="">Semua periode</option>${options([...new Set(state.agents.map(a => a.period).filter(Boolean))].sort(), agentPeriodFilter)}</select><select id="agent-sort" aria-label="Urutkan agen"><option value="division" ${agentSort === "division" ? "selected" : ""}>Divisi & jabatan</option><option value="name-asc" ${agentSort === "name-asc" ? "selected" : ""}>Nama A–Z</option><option value="name-desc" ${agentSort === "name-desc" ? "selected" : ""}>Nama Z–A</option></select></div><span class="result-count" id="agent-count" aria-live="polite"></span></div><p class="directory-help">Cari potongan nama di bagian mana pun. Edit nama, divisi, dan jabatan melalui tombol Edit profil.</p><div class="agent-grid" id="agent-grid"></div>`;
   renderAgentCards();
 }
 function renderAgentCards() {
@@ -681,7 +683,7 @@ function renderAttendance() {
       : attendanceTab === "master"
         ? `<button class="button" data-action="import-legacy-schedule">Impor jadwal lama</button><button class="button primary" data-action="add-weekly" data-day="Senin" data-session="Pagi">${icon("plus")}Tambah ke jadwal master</button>`
         : attendanceTab === "denda"
-          ? `<button class="button" data-action="export-fines-csv">Export CSV Denda</button>`
+          ? `<button class="button" data-action="export-fines-csv">Ekspor CSV sesuai filter</button>`
           : "";
 
   const subTabs = `<div class="toolbar operational-toolbar">
@@ -849,6 +851,8 @@ function renderSettingsView() {
       <button type="submit" class="button primary">${icon("check")}Simpan pengaturan</button>
     </div>
     <div class="settings-body">
+      <label class="form-field"><span>Periode kepengurusan aktif</span><input class="input" name="activePeriod" aria-label="Periode kepengurusan aktif" maxlength="80" required value="${esc(s.activePeriod)}"><small class="help">Menjadi periode awal profil baru. Profil dan riwayat lama tetap pada periodenya.</small></label>
+      <p class="help">${state.shifts.some(x => x.rulesSnapshot?.source === "migration_baseline") ? "Catatan lama memakai baseline aturan saat pembaruan sistem. Periksa rekap lama karena aturan historis aslinya belum tersimpan. " : ""}Aturan tersimpan saat kehadiran pertama dicatat. Perubahan pengaturan berlaku untuk catatan berikutnya; koreksi catatan lama tetap memakai aturan tersimpan.</p>
       <div class="settings-days">
         ${WORKDAYS.map((day) => {
           const pagi = s.operationalHours[day].Pagi;
@@ -901,9 +905,9 @@ function renderSettingsView() {
   </form>`;
 }
 
-function renderFinesView() {
-  const q = fineSearch.toLocaleLowerCase("id");
-  const finedShifts = state.shifts
+function filteredFines() {
+  const q = fineSearch.trim().toLocaleLowerCase("id");
+  return state.shifts
     .map((s) => ({ shift: s, fine: calcShiftFine(s) }))
     .filter(({ shift, fine }) => {
       if (fine.amount <= 0) return false;
@@ -914,6 +918,10 @@ function renderFinesView() {
       return true;
     })
     .sort((a, b) => b.shift.date.localeCompare(a.shift.date));
+}
+
+function renderFinesView() {
+  const finedShifts = filteredFines();
 
   const allFined = state.shifts
     .map((s) => ({ shift: s, fine: calcShiftFine(s) }))
@@ -940,7 +948,7 @@ function renderFinesView() {
         <option value="paid" ${fineStatusFilter === "paid" ? "selected" : ""}>Sudah lunas</option>
       </select>
     </div>
-    <button class="button" data-action="export-fines-csv">Export CSV Denda</button>
+    <button class="button" data-action="export-fines-csv">Ekspor CSV sesuai filter</button>
   </div>
   <section class="panel">
     <div class="panel-header">
@@ -1143,7 +1151,7 @@ function editAgent(agentId) {
   openDialog(
     agentId ? "Edit profil agen" : "Tambah agen",
     "DIREKTORI AGEN",
-    `<form id="agent-form" data-id="${esc(agentId || "")}"><label class="form-field"><span>Nama lengkap</span><input class="input" name="name" required maxlength="80" value="${esc(a.name)}" placeholder="Nama lengkap agen"></label><label class="form-field"><span>Divisi</span><select name="division" required><option value="">Pilih divisi</option>${options(availableDivisions(a.division), a.division)}</select></label><label class="form-field"><span>Jabatan</span><input class="input" name="position" list="position-options" autocomplete="off" required maxlength="60" value="${esc(a.position)}"><datalist id="position-options">${positionSuggestions(a.division, a.position)}</datalist><small class="help" id="position-help"></small></label><label class="form-field"><span>Status</span><select name="active"><option value="true" ${a.active ? "selected" : ""}>Aktif</option><option value="false" ${!a.active ? "selected" : ""}>Nonaktif</option></select></label><div id="position-shortcuts" class="position-shortcuts" aria-label="Saran jabatan"></div><p class="profile-note">Menambahkan agen hanya membuat profil anggota. Tidak ada akun atau kredensial yang dibuat.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan profil</button></div></form>`,
+    `<form id="agent-form" data-id="${esc(agentId || "")}"><label class="form-field"><span>Nama lengkap</span><input class="input" name="name" required maxlength="80" value="${esc(a.name)}" placeholder="Nama lengkap agen"></label><label class="form-field"><span>Divisi</span><select name="division" required><option value="">Pilih divisi</option>${options(availableDivisions(a.division), a.division)}</select></label><label class="form-field"><span>Jabatan</span><input class="input" name="position" list="position-options" autocomplete="off" required maxlength="60" value="${esc(a.position)}"><datalist id="position-options">${positionSuggestions(a.division, a.position)}</datalist><small class="help" id="position-help"></small></label><label class="form-field"><span>Periode kepengurusan</span><input class="input" name="period" maxlength="80" required value="${esc(a.period || activeSettings().activePeriod)}"></label><label class="form-field"><span>Status</span><select name="active"><option value="true" ${a.active ? "selected" : ""}>Aktif</option><option value="false" ${!a.active ? "selected" : ""}>Nonaktif</option></select></label><div id="position-shortcuts" class="position-shortcuts" aria-label="Saran jabatan"></div><p class="profile-note">Menambahkan agen hanya membuat profil anggota. Tidak ada akun atau kredensial yang dibuat.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button class="button primary" type="submit">Simpan profil</button></div></form>`,
   );
   updatePositionSuggestions();
 }
@@ -1735,10 +1743,8 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "export-fines-csv": {
-      const rows = state.shifts
-        .map((s) => ({ s, fine: calcShiftFine(s) }))
-        .filter((x) => x.fine.amount > 0)
-        .map(({ s, fine }) => [
+      const rows = filteredFines()
+        .map(({ shift: s, fine }) => [
           s.date,
           s.session,
           agentName(s.agent),
@@ -1788,7 +1794,11 @@ document.addEventListener("input", (e) => {
   }
   if (e.target.id === "fine-search") {
     fineSearch = e.target.value;
+    const cursor = e.target.selectionStart;
     renderAttendance();
+    const search = document.querySelector("#fine-search");
+    search.focus();
+    if (cursor !== null) search.setSelectionRange(cursor, cursor);
   }
   if (e.target.id === "post-link") e.target.setCustomValidity("");
 });
@@ -1797,6 +1807,10 @@ document.addEventListener("change", async (e) => {
   if (el.name === "division" && el.closest("#agent-form"))
     updatePositionSuggestions();
   switch (el.id) {
+    case "agent-period-filter":
+      agentPeriodFilter = el.value;
+      renderAgentCards();
+      break;
     case "agent-sort":
       agentSort = el.value;
       renderAgentCards();
@@ -1911,8 +1925,8 @@ document.addEventListener("submit", async (e) => {
     case "agent-form": {
       const name = data.name.trim(),
         position = data.position.trim();
-      if (!name || !position) {
-        toast("Nama dan jabatan wajib diisi.");
+      if (!name || !position || !data.period.trim()) {
+        toast("Nama, jabatan, dan periode wajib diisi.");
         return;
       }
       let savedId = recordId || id();
@@ -1923,6 +1937,7 @@ document.addEventListener("submit", async (e) => {
             name,
             position,
             division: data.division,
+            period: data.period.trim(),
             active: data.active === "true",
             initials: name
               .split(/\s+/)
@@ -1935,7 +1950,6 @@ document.addEventListener("submit", async (e) => {
             s.agents.push({
               id: savedId,
               ...patch,
-              period: "2026 / 2027",
               photo: "",
             });
         }, "Profil agen tersimpan.")
@@ -2123,6 +2137,7 @@ document.addEventListener("submit", async (e) => {
       break;
     }
     case "settings-form": {
+      if (!data.activePeriod.trim()) { toast("Periode kepengurusan wajib diisi."); return; }
       const operationalHours = {};
       for (const day of WORKDAYS) {
         operationalHours[day] = {
@@ -2138,8 +2153,15 @@ document.addEventListener("submit", async (e) => {
           },
         };
       }
+      for (const day of WORKDAYS) {
+        for (const session of ["Pagi", "Siang"]) {
+          const hours = operationalHours[day][session];
+          if (hours.end <= hours.start) { toast(`Jam tutup ${day} ${session} harus setelah jam buka.`); return; }
+        }
+      }
       const patch = {
         id: SETTINGS_ID,
+        activePeriod: data.activePeriod.trim(),
         lateToleranceMinutes: Math.max(
           0,
           Number(data.lateToleranceMinutes ?? 15),
@@ -2154,7 +2176,7 @@ document.addEventListener("submit", async (e) => {
           else s.settings.push(patch);
         }, "Pengaturan jam buka/tutup & aturan denda tersimpan.")
       ) {
-        renderAttendance();
+        render();
       }
       break;
     }

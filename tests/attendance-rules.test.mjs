@@ -76,3 +76,13 @@ test("division choices include both distinct divisions and preserve existing lab
   assert.equal(choices.filter((x) => x === "Analisis Data").length, 1);
   assert.equal(divisionChoices().includes("Analisis & Pelayanan"), false);
 });
+
+// A changed configuration must never rewrite a captured historical result.
+{
+  const shift = { status: "Hadir", time: "10:30", rulesSnapshot: {
+    lateToleranceMinutes: 15, lateFineAmount: 5000, absentFineAmount: 10000,
+    session: { active: true, start: "10:00", end: "12:30" }
+  }};
+  assert.equal(shiftFine(shift, { lateFineAmount: 9000, lateToleranceMinutes: 90 }, {start:"11:00"}).amount, 5000);
+  assert.equal(durationMinutes(shift, { active: false, start: "11:00", end: "11:30" }), 120);
+}

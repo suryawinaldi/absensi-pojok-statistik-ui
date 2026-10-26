@@ -13,12 +13,6 @@ const output = path.join(root, "public");
 // Only the build-owned output directory is recreated.
 await rm(output, { recursive: true, force: true });
 await mkdir(path.join(output, "admin/assets"), { recursive: true });
-await mkdir(path.join(output, "legacy"), { recursive: true });
-for (const item of ["index.html", "js", "css"]) {
-  await cp(path.join(root, item), path.join(output, "legacy", item), {
-    recursive: true,
-  });
-}
 for (const item of ["index.html", "styles.css"]) {
   await cp(path.join(root, "admin", item), path.join(output, "admin", item));
 }
@@ -77,5 +71,5 @@ await build({
   logLevel: "info",
 });
 console.log(
-  "Static site built. Workspace: / and /admin/ · Previous app: /legacy/ · Design demo: /prototype/",
+  "Static site built. Workspace: / and /admin/ · Design demo: /prototype/",
 );

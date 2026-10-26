@@ -47,6 +47,8 @@ export const isInlineImage = (value) =>
   /^data:image\/(jpeg|png|webp);base64,/.test(value);
 
 export function readableError(error) {
+  if (error?.code === "P0001")
+    return "Catatan terkunci: batalkan status lunas sebelum mengubah atau menghapus kehadiran. Catatan dengan aturan tersimpan tidak dapat dipindah tanggal/sesi.";
   if (error?.code === "23505")
     return "Data sudah ada. Periksa penugasan pada hari/tanggal dan sesi yang sama.";
   if (error?.code === "23503")
@@ -139,6 +141,7 @@ function rowToModel(collection, row, signed) {
       pj: Boolean(row.is_pj),
       extra: Boolean(row.is_extra),
       finePaid: Boolean(row.fine_paid),
+      rulesSnapshot: row.rules_snapshot || null,
       status: row.status,
       time: row.arrival_time?.slice(0, 5) || "",
       _version: row.version,
@@ -167,6 +170,7 @@ function rowToModel(collection, row, signed) {
     }
     return {
       id: row.id || SETTINGS_ID,
+      activePeriod: row.active_period || "2026 / 2027",
       lateToleranceMinutes: Number(row.late_tolerance_minutes ?? 15),
       lateFineAmount: Number(row.late_fine_amount ?? 5000),
       absentFineAmount: Number(row.absent_fine_amount ?? 10000),
@@ -220,12 +224,12 @@ export function createRepository(
     for (let start = 0; ; start += 500) {
       const { data, error } = await client
         .from(table)
-        .select("*")
+        .select(table === "ps_shifts" ? "*,rules_snapshot" : table === "ps_settings" ? "*,active_period" : "*")
         .order("id")
         .range(start, start + 499);
       if (error) {
         if (
-          ["ps_weekly_schedule", "ps_settings"].includes(table) &&
+          ["ps_weekly_schedule"].includes(table) &&
           ["42P01", "PGRST205"].includes(error.code)
         ) {
           return [];
@@ -363,6 +367,7 @@ export function createRepository(
         } else if (collection === "settings") {
           payload = {
             id: row.id || SETTINGS_ID,
+            active_period: row.activePeriod,
             late_tolerance_minutes: Number(row.lateToleranceMinutes ?? 15),
             late_fine_amount: Number(row.lateFineAmount ?? 5000),
             absent_fine_amount: Number(row.absentFineAmount ?? 10000),
@@ -410,6 +415,7 @@ export function createRepository(
           (item) => item.id === row.id,
         );
         const canonical = { ...row, _version: data.version };
+        if (collection === "shifts") canonical.rulesSnapshot = data.rules_snapshot || null;
         if (collection === "agents") canonical._photoPath = data.photo_path;
         if (collection === "posts") canonical._imagePaths = data.image_paths;
         result[collection][index] = canonical;

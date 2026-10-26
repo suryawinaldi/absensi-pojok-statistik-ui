@@ -277,4 +277,32 @@ test("workspace migration and access policies on local PostgreSQL", async (t) =>
       );
     },
   );
+  await t.test("history migration locks rules and paid records while preserving RLS", async () => {
+    await db.exec("reset role");
+    await db.exec(await readFile(new URL("../supabase/migrations/20261026070244_preserve_attendance_rules_and_period.sql", import.meta.url), "utf8"));
+    await actor(ADMIN);
+    const baseline = (await db.query("select rules_snapshot from ps_shifts limit 1")).rows[0].rules_snapshot;
+    assert.equal(baseline.source, "migration_baseline");
+    await db.query("update ps_settings set late_fine_amount=7000, active_period='2027 / 2028'");
+    await db.query("insert into ps_shifts(agent_id,date,session,status,arrival_time,rules_snapshot) values ($1,'2026-10-26','Pagi','Hadir','10:30',$2)", [AGENT, JSON.stringify({lateFineAmount: 1})]);
+    let row = (await db.query("select * from ps_shifts where date='2026-10-26'")).rows[0];
+    assert.equal(row.rules_snapshot.lateFineAmount, 7000, "server ignores supplied snapshot");
+    await db.query("update ps_settings set late_fine_amount=9000");
+    await db.query("update ps_shifts set arrival_time='10:40', rules_snapshot='{}' where id=$1", [row.id]);
+    row = (await db.query("select * from ps_shifts where id=$1", [row.id])).rows[0];
+    assert.equal(row.rules_snapshot.lateFineAmount, 7000);
+    await db.query("update ps_shifts set fine_paid=true where id=$1", [row.id]);
+    await assert.rejects(db.query("update ps_shifts set status='Tidak hadir',arrival_time=null where id=$1", [row.id]), /Batalkan status lunas/);
+    await assert.rejects(db.query("delete from ps_shifts where id=$1", [row.id]), /Batalkan status lunas/);
+    await db.query("update ps_shifts set fine_paid=false where id=$1", [row.id]);
+    await db.query("update ps_shifts set status='Tidak hadir',arrival_time=null where id=$1", [row.id]);
+    await assert.rejects(db.query("update ps_shifts set date='2026-10-27' where id=$1", [row.id]), /tidak dapat dipindah/);
+    await assert.rejects(db.query("update ps_settings set active_period=' '"), /check constraint/);
+    await assert.rejects(db.query("update ps_settings set operational_hours=$1", [JSON.stringify({Senin:{Pagi:{start:"12:00",end:"10:00"}}})]), /Jam tutup/);
+    await actor(OTHER);
+    assert.equal((await db.query("select * from ps_shifts")).rows.length, 0);
+    assert.equal((await db.query("select * from ps_settings")).rows.length, 0);
+    await assert.rejects(db.query("select ps_capture_attendance_rules()"), /permission denied/);
+  });
+
 });

@@ -134,3 +134,11 @@ test("older PI role labels keep hierarchy without renaming stored positions", ()
   );
   assert.equal(result[0].position, "Ketua Agen");
 });
+
+test("period filter keeps historic profiles separate", () => {
+  const agents = [
+    {id:"old",name:"A",division:"Media",position:"Anggota",period:"2026 / 2027"},
+    {id:"new",name:"B",division:"Media",position:"Anggota",period:"2027 / 2028"}
+  ];
+  assert.deepEqual(directoryAgents(agents, {period:"2027 / 2028"}).map(a=>a.id), ["new"]);
+});

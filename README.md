@@ -8,7 +8,6 @@ Aplikasi operasional Pojok Statistik UI. **Hanya satu akun admin yang login.** A
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `/`           | Workspace admin baru                                                                                             |
 | `/admin/`     | Workspace baru: Supabase Auth, direktori agen, jadwal bertanggal, kehadiran, kalender konten, foto/materi privat |
-| `/legacy/`    | Aplikasi absensi lama, tetap tersedia selama transisi                                                            |
 | `/prototype/` | Demo desain dengan data fiktif dan penyimpanan lokal                                                             |
 
 Workspace `/admin/` tidak menggunakan data demo. Database baru memakai tabel `ps_*`, terpisah dari tabel aplikasi lama. Login lama tidak dapat digunakan untuk masuk ke workspace baru.
@@ -35,7 +34,7 @@ Belum dilakukan otomatis. Gunakan proyek staging terlebih dahulu untuk uji langs
 3. Redeploy Vercel setelah konfigurasi disimpan. Masuk memakai username pilihan dan password akun Auth; email tidak diketik pada form login.
 4. Uji profil, foto, penugasan, absensi, dan konten di staging. Pastikan sesi nonadmin dan permintaan tanpa login ditolak.
 
-Lingkungan cloud saat pengembangan masih mendapat **proxy 403** untuk `jlzbdggbklnhrfixggym.supabase.co`. Akses HTTPS domain proyek Supabase harus diizinkan agar pengujian langsung dapat berjalan. Domain ini sudah diusulkan dalam draft konfigurasi lingkungan sebelumnya; menyimpan kode tidak mengaktifkan jaringan atau migrasi.
+Verifikasi produksi belum selesai. Koneksi tool Vercel terakhir ditolak dengan 403 pada pemeriksaan akses deployment; keberhasilan tes lokal bukan bukti akses atau konfigurasi produksi.
 
 ## Memindahkan daftar agen lama
 
@@ -81,8 +80,23 @@ python3 prototype/tests/smoke.py --base-url http://127.0.0.1:8001
 
 ## Vercel
 
-`vercel.json` menetapkan build `npm run build` dan output `public`. Setelah perubahan dikirim ke GitHub dan Vercel selesai membangun, workspace baru langsung tampil di halaman utama `/` dan tetap tersedia di `/admin/`. Aplikasi lama tersedia di `/legacy/`. Endpoint `api/admin-login.js` dijalankan sebagai Vercel Function. File SQL, konfigurasi pemetaan akun, dan script migrasi tidak disalin ke output statis publik. Status push GitHub dan deployment perlu diverifikasi terpisah dari keberhasilan build lokal.
+`vercel.json` menetapkan build `npm run build` dan output `public`. Setelah perubahan dikirim ke GitHub dan Vercel selesai membangun, workspace baru langsung tampil di halaman utama `/` dan tetap tersedia di `/admin/`. Aplikasi lama tidak lagi disalin ke output publik; `/legacy/` tidak tersedia pada deployment baru. Source dan data lama tetap dipertahankan untuk kebutuhan migrasi. Endpoint `api/admin-login.js` dijalankan sebagai Vercel Function. File SQL, konfigurasi pemetaan akun, dan script migrasi tidak disalin ke output statis publik. Status push GitHub dan deployment perlu diverifikasi terpisah dari keberhasilan build lokal.
 
 ## Tahap berikutnya
 
-Aktivasi dan pengujian Supabase staging; migrasi riwayat lama; pengaturan periode/jam operasional; laporan dan denda pada workspace baru. Saat ini jam operasional yang tampil masih label desain, belum menghitung denda. Fitur tersebut tetap tersedia pada aplikasi lama di `/legacy/`.
+Pengujian staging/produksi, migrasi riwayat lama, UI audit perubahan, dan backup/restore. Workspace sudah menyediakan jam operasional, toleransi, denda, status pembayaran, ekspor CSV, periode aktif, serta filter periode direktori. Arsip periode untuk seluruh laporan belum tersedia; laporan semua waktu diberi label sesuai cakupannya.
+
+
+## Pembaruan histori dan periode — 26 Oktober 2026
+
+Sebelum menerbitkan frontend ini, terapkan migrasi `supabase/migrations/20261026070244_preserve_attendance_rules_and_period.sql` pada staging setelah migrasi sebelumnya. Migrasi harus dijalankan sekali, dalam transaksi, menggunakan pemilik database. Backup dahulu, periksa hasil di staging, lalu terapkan ke produksi sebelum deployment frontend. Frontend meminta kolom baru secara eksplisit sehingga schema lama menghasilkan pesan migrasi, bukan keberhasilan perlindungan histori yang semu.
+
+- `active_period` mengatur label workspace dan periode awal profil baru. Profil lama tidak dipindahkan otomatis. Periode profil dapat diedit dan direktori dapat difilter per periode; ID agen tetap sama.
+- `rules_snapshot` ditentukan trigger database pada kehadiran pertama yang dicatat. Denda dan estimasi durasi menggunakan salinan aturan tersebut, termasuk saat catatan dikoreksi. Request browser tidak dapat menimpa snapshot. Tanggal/sesi catatan bersnapshot tidak dapat dipindah.
+- Catatan lama menerima baseline dari konfigurasi saat migrasi, ditandai `source = migration_baseline`. Ini bukan rekonstruksi aturan historis yang tidak pernah disimpan. Tinjau nominal lama sebelum migrasi dan bandingkan rekap setelahnya.
+- Catatan lunas harus dibatalkan status lunasnya sebelum kehadiran diubah atau dihapus. Trigger mencatat perubahan melalui mekanisme audit yang sudah tersedia.
+- Perubahan pengaturan divalidasi di form dan database: format jam harus benar dan jam tutup harus setelah jam buka. Sesi yang belum diatur tetap memakai default aplikasi.
+- Aplikasi lama tidak dipublikasikan lagi. Langkah ini tidak mencabut akses tabel legacy atau menonaktifkan deployment lama yang sudah terbit; audit kebijakan RLS legacy dan akses deployment lama tetap diperlukan.
+- Ekspor denda mengikuti filter pencarian dan pembayaran. Pengujian browser memeriksa file unduhan sebenarnya. Nilai teks CSV dinetralkan agar tidak menjadi formula spreadsheet.
+
+Pengujian: `npm test`, `npm run build`, lalu `python3 tests/browser_admin.py` dengan server statis lokal. Tes database mencakup snapshot historis, penolakan manipulasi snapshot, penguncian pembayaran, validasi periode/jam, dan akses nonadmin. Browser mencakup periode aktif, validasi jam, serta ekspor terfilter. Semua tes tetap lokal/simulasi.

@@ -5,6 +5,7 @@ function minutes(value) {
   return h < 24 && m < 60 ? h * 60 + m : null;
 }
 export function durationMinutes(shift, session) {
+  session = shift.rulesSnapshot?.session || session;
   if (shift.status !== "Hadir" || session.active === false) return 0;
   const arrival = minutes(shift.time),
     start = minutes(session.start),
@@ -22,6 +23,8 @@ export function contribution(shift, session) {
   };
 }
 export function shiftFine(shift, settings, session) {
+  settings = shift.rulesSnapshot || settings;
+  session = shift.rulesSnapshot?.session || session;
   // Volunteer exemption is unconditional: arrival time, grace period, or any
   // configured late/absence amount must never turn a helper into a debtor.
   if (shift.extra || shift.pj) return { amount: 0, reason: "", exempt: true };

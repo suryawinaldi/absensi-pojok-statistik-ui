@@ -118,9 +118,9 @@ with sync_playwright() as p:
     page.goto(args.base_url+'/',wait_until='networkidle')
     expect(page.locator('#workspace-shell')).to_be_hidden()
     expect(page.get_by_role('heading',name='Selamat datang kembali.')).to_be_visible()
-    assert page.get_by_role('link',name='Buka aplikasi absensi lama').get_attribute('href')=='/legacy/'
-    assert page.request.get(args.base_url+'/legacy/').text()==(ROOT/'index.html').read_text()
-    assert page.request.get(args.base_url+'/legacy/js/app.js').text()==(ROOT/'js/app.js').read_text()
+    assert page.get_by_role('link',name='Buka aplikasi absensi lama').count()==0
+    assert page.request.get(args.base_url+'/legacy/').status==404
+    assert page.request.get(args.base_url+'/legacy/js/auth.js').status==404
     page.screenshot(path=str(out/'admin-login.png'),full_page=True)
     PNG=(out/'admin-login.png').read_bytes()
     login(page,'incorrect')
@@ -128,6 +128,19 @@ with sync_playwright() as p:
     login(page)
     expect(page.get_by_role('heading',name='Selamat datang, Admin.')).to_be_visible()
     assert 'Nadia' not in page.locator('#main').inner_text(), 'Demo records leaked into production UI'
+    page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
+    page.get_by_role('button',name='Jam Buka & Tutup',exact=True).click()
+    page.get_by_label('Periode kepengurusan aktif',exact=True).fill('2027 / 2028')
+    page.locator('[name="end_Senin_Pagi"]').fill('09:00')
+    page.get_by_role('button',name='Simpan pengaturan',exact=True).click()
+    expect(page.locator('#toast')).to_contain_text('harus setelah jam buka')
+    assert backend.rows['ps_settings']==[]
+    page.locator('[name="end_Senin_Pagi"]').fill('12:30')
+    page.get_by_role('button',name='Simpan pengaturan',exact=True).click()
+    expect(page.locator('#toast')).to_contain_text('tersimpan')
+    assert backend.rows['ps_settings'][0]['active_period']=='2027 / 2028'
+    expect(page.locator('.semester')).to_contain_text('2027 / 2028')
+    page.get_by_role('button',name='Absensi Harian',exact=True).click()
     page.get_by_role('link',name='Direktori Agen').click()
     page.get_by_role('button',name='Tambah agen',exact=True).click()
     page.get_by_label('Nama lengkap').fill('Agen Tersimpan')
@@ -145,6 +158,7 @@ with sync_playwright() as p:
     expect(page.locator('dialog').get_by_role('heading',name='Agen Tersimpan',exact=True)).to_be_visible()
     assert len(backend.rows['ps_agents'])==2
     assert backend.rows['ps_agents'][-1]['division']=='Analisis Data'
+    assert backend.rows['ps_agents'][-1]['period']=='2027 / 2028'
     page.get_by_label('Foto profil').set_input_files({'name':'photo.png','mimeType':'image/png','buffer':PNG})
     expect(page.locator('.profile-hero img')).to_be_visible()
     assert len(backend.uploads)==1
@@ -298,6 +312,23 @@ with sync_playwright() as p:
     expect(page.locator('dialog')).to_be_hidden()
     assert backend.rows['ps_weekly_schedule'][0]['id']==weekly_id
     assert backend.rows['ps_weekly_schedule'][0]['day_name']=='Selasa'
+    # Verify the actual CSV download follows the paid/unpaid filter.
+    backend.rows['ps_shifts'] = [
+        {'id':'fine-unpaid','agent_id':AGENT,'date':'2026-10-20','session':'Pagi','status':'Tidak hadir','arrival_time':None,'fine_paid':False,'is_extra':False,'is_pj':False,'version':1},
+        {'id':'fine-paid','agent_id':AGENT,'date':'2026-10-21','session':'Pagi','status':'Tidak hadir','arrival_time':None,'fine_paid':True,'is_extra':False,'is_pj':False,'version':1}
+    ]
+    page.reload(wait_until='networkidle')
+    page.get_by_role('button',name='Rekap Denda',exact=True).click()
+    page.get_by_label('Filter status denda').select_option('unpaid')
+    page.get_by_label('Cari denda agen').press_sequentially('Surya')
+    expect(page.get_by_label('Cari denda agen')).to_have_value('Surya')
+    expect(page.get_by_label('Cari denda agen')).to_be_focused()
+    with page.expect_download() as downloaded:
+        page.get_by_role('button',name='Ekspor CSV sesuai filter',exact=True).first.click()
+    csv=Path(downloaded.value.path()).read_text(encoding='utf-8-sig')
+    assert '2026-10-20' in csv and '2026-10-21' not in csv
+    page.get_by_role('link',name='Direktori Agen',exact=True).click()
+    expect(page.get_by_label('Filter periode')).to_be_visible()
     page.get_by_role('button',name='Keluar',exact=True).click()
     expect(page.locator('#workspace-shell')).to_be_hidden()
     assert page.locator('#main').inner_text()==''
@@ -322,6 +353,9 @@ with sync_playwright() as p:
     for route in ['agen','kehadiran','konten']:
         mobile.goto(args.base_url+'/admin/#'+route,wait_until='networkidle')
         assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth'),route
+    mobile.set_viewport_size({'width':320,'height':700})
+    assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    mobile.set_viewport_size({'width':390,'height':844})
     mobile.get_by_role('link',name='Direktori Agen',exact=True).click()
     mobile.screenshot(path=str(out/'directory-mobile.png'),full_page=True)
     mobile.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
@@ -332,5 +366,5 @@ with sync_playwright() as p:
     assert mobile.locator('#shift-form [name="agent"]').input_value()==AGENT
     assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors,errors
-    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker'],'screenshots':str(out)}))
+    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker','active period and default profile period','invalid operational hours rejected','filtered CSV download','search retains keyboard focus','legacy routes removed'],'screenshots':str(out)}))
     browser.close()
