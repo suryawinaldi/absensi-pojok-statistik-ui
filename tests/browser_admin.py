@@ -28,7 +28,7 @@ class Backend:
         self.user = {'id': ADMIN, 'aud': 'authenticated', 'role': 'authenticated', 'email': 'admin@example.test', 'created_at':'2026-01-01T00:00:00Z','app_metadata':{},'user_metadata':{}}
         self.rows = {
             'ps_agents': [{'id':AGENT,'name':'Agen Integrasi','division':'Pelayanan dan Konsultasi','position':'Anggota','active':True,'period':'2026 / 2027','photo_path':None,'version':1}],
-            'ps_shifts': [], 'ps_posts': [], 'ps_weekly_schedule': [], 'ps_settings': [], 'ps_online_roster': [], 'ps_online_clients': [], 'ps_online_notes': [], 'ps_online_events': []}
+            'ps_shifts': [], 'ps_posts': [], 'ps_weekly_schedule': [], 'ps_settings': [], 'ps_fine_payments': [], 'ps_online_roster': [], 'ps_online_clients': [], 'ps_online_notes': [], 'ps_online_events': []}
     def token(self):
         enc = lambda v: base64.urlsafe_b64encode(json.dumps(v).encode()).decode().rstrip('=')
         jwt = enc({'alg':'HS256'})+'.'+enc({'sub':ADMIN,'exp':int(time.time())+3600,'aud':'authenticated','role':'authenticated'})+'.'+base64.urlsafe_b64encode(b'fixture-signature').decode().rstrip('=')
@@ -64,6 +64,24 @@ class Backend:
         elif '/storage/v1/object/pojok-media/' in path and method=='POST':
             self.uploads.append(path);respond({'Key':path.split('/object/')[1]})
         elif '/storage/v1/object/pojok-media' in path and method=='DELETE':respond([])
+        elif path.endswith('/rest/v1/rpc/ps_correct_online_roster'):
+            payload=req.post_data_json
+            old=next(r for r in self.rows['ps_online_roster'] if r['id']==payload['row_id'])
+            old['cancelled_at']='2026-10-27T01:00:00Z';old['cancellation_reason']=payload['reason'];old['version']+=1
+            if payload.get('replacement'):
+                row={**payload['replacement'],'id':str(__import__('uuid').uuid4()),'version':1,'cancelled_at':None}
+                self.rows['ps_online_roster'].append(row);respond(row['id'])
+            else:respond(old['id'])
+        elif path.endswith('/rest/v1/rpc/ps_record_fine_payment') or path.endswith('/rest/v1/rpc/ps_reverse_fine_payment'):
+            payload=req.post_data_json
+            if self.fail_write:respond({'code':'42501','message':'denied'},403);return
+            shift=next(r for r in self.rows['ps_shifts'] if r['id']==payload['shift_id'])
+            reverse=path.endswith('ps_reverse_fine_payment')
+            if not any(p['id']==payload['request_id'] for p in self.rows['ps_fine_payments']):
+                previous=next((p for p in self.rows['ps_fine_payments'] if p['shift_id']==shift['id'] and p['event_type']=='payment'),None)
+                self.rows['ps_fine_payments'].append({'id':payload['request_id'],'shift_id':shift['id'],'event_type':'reversal' if reverse else 'payment','amount':10000,'paid_at':payload.get('payment_time','2026-10-27T01:00:00Z'),'recorded_at':'2026-10-27T01:00:00Z','received_by':payload.get('receiver','Bendahara Uji'),'note':payload.get('reason',payload.get('note_text','')),'origin':'admin','reverses':previous['id'] if reverse else None})
+                shift['fine_paid']=not reverse;shift['version']+=1
+            respond(payload['request_id'])
         elif path.endswith('/rest/v1/rpc/ps_online_resolve'):
             respond(None)
         elif path.endswith('/rest/v1/rpc/ps_import_agents'):
@@ -103,6 +121,11 @@ def choose_agent(page,label,name):
     field=page.get_by_role('combobox',name=label,exact=True)
     field.fill(name)
     page.locator('.agent-picker-options').get_by_role('option').filter(has_text=name).click()
+
+def close_panel(page):
+    if page.locator('dialog form[data-unsaved="true"]').count():
+        page.once('dialog',lambda d:d.accept())
+    page.get_by_role('button',name='Tutup panel').click()
 
 def login(page,password='fixture-password'):
     page.get_by_label('Username admin').fill('adminpojokui')
@@ -174,7 +197,7 @@ with sync_playwright() as p:
     expect(page.locator('.profile-hero img')).to_be_visible()
     assert len(backend.uploads)==1
     assert backend.rows['ps_agents'][-1]['photo_path'].startswith('agents/')
-    page.get_by_role('button',name='Tutup panel').click()
+    close_panel(page)
     page.reload(wait_until='networkidle')
     expect(page.locator('.agent-card img')).to_be_visible()
     page.get_by_role('link',name='Jadwal & Kehadiran',exact=True).click()
@@ -186,6 +209,7 @@ with sync_playwright() as p:
     assert backend.rows['ps_shifts'][0]['is_extra'] is True
     # A helper must not be counted as a regular session, even after a reload.
     page.get_by_role('link',name='Beranda',exact=True).click()
+    page.locator('#analytics-details > summary').click()
     expect(page.get_by_role('heading',name='Konsisten hadir, bersama berkarya')).to_be_visible()
     expect(page.locator('.ranking-column')).to_have_count(1)
     expect(page.locator('.ranking-column')).to_have_attribute('aria-label', re.compile('75 menit, termasuk 75 menit sukarela'))
@@ -206,7 +230,7 @@ with sync_playwright() as p:
     expect(page.locator('#toast')).to_contain_text('bertugas reguler')
     assert len(backend.rows['ps_shifts'])==2
     assert backend.rows['ps_shifts'][1]['is_extra'] is False
-    page.get_by_role('button',name='Tutup panel').click()
+    close_panel(page)
     page.get_by_role('link',name='Konten & Publikasi').click()
     page.get_by_role('button',name='Buat konten',exact=True).click()
     page.get_by_label('Judul konten').fill('Konten Integrasi')
@@ -227,7 +251,7 @@ with sync_playwright() as p:
     expect(page.locator('#post-form')).to_be_visible()
     assert backend.rows['ps_posts'][0]['title']=='Konten Integrasi'
     backend.conflict=False
-    page.get_by_role('button',name='Tutup panel').click()
+    close_panel(page)
     page.get_by_role('link',name='Direktori Agen').click()
     for expected in ['1 agen diimpor', '0 agen diimpor']:
         page.get_by_role('button',name='Impor agen lama',exact=True).click()
@@ -246,7 +270,7 @@ with sync_playwright() as p:
         expect(page.get_by_label('Jabatan',exact=True)).to_have_value(position)
         page.get_by_role('button',name='Simpan profil').click()
         expect(page.locator('dialog').get_by_role('heading',name=name,exact=True)).to_be_visible()
-        page.get_by_role('button',name='Tutup panel').click()
+        close_panel(page)
     page.get_by_label('Cari agen',exact=True).fill('SU')
     expect(page.locator('.agent-card')).to_have_count(3)
     page.get_by_label('Filter divisi',exact=True).select_option('Media Kreatif')
@@ -274,7 +298,7 @@ with sync_playwright() as p:
     assert backend.rows['ps_agents'][0]['division']=='Pengurus Inti'
     assert backend.rows['ps_posts'][0]['agent_id']==AGENT
     assert backend.rows['ps_shifts'][0]['agent_id']==AGENT
-    page.get_by_role('button',name='Tutup panel').click()
+    close_panel(page)
     page.reload(wait_until='networkidle')
     page.get_by_label('Cari agen',exact=True).fill('INTEGRA')
     expect(page.locator('.agent-card h2')).to_have_text(['Surya Integrasi'])
@@ -338,6 +362,20 @@ with sync_playwright() as p:
         page.get_by_role('button',name='Ekspor CSV sesuai filter',exact=True).first.click()
     csv=Path(downloaded.value.path()).read_text(encoding='utf-8-sig')
     assert '2026-10-20' in csv and '2026-10-21' not in csv
+    page.get_by_role('button',name='Tandai lunas',exact=True).click()
+    page.get_by_label('Diterima oleh',exact=True).fill('Bendahara Uji')
+    page.get_by_role('button',name='Simpan pembayaran',exact=True).click()
+    expect(page.locator('dialog')).to_be_hidden()
+    assert backend.rows['ps_fine_payments'][0]['received_by']=='Bendahara Uji'
+    assert backend.rows['ps_shifts'][0]['fine_paid'] is True
+    page.get_by_label('Filter status denda').select_option('paid')
+    page.locator('[data-action="toggle-fine-paid"][data-id="fine-unpaid"]').filter(has_text='Batalkan lunas').click()
+    expect(page.locator('dialog')).to_contain_text('Bendahara Uji')
+    page.get_by_label('Alasan pembatalan pembayaran',exact=True).fill('Salah pencatatan')
+    page.get_by_role('button',name='Konfirmasi pembatalan pembayaran',exact=True).click()
+    expect(page.locator('dialog')).to_be_hidden()
+    assert backend.rows['ps_shifts'][0]['fine_paid'] is False
+    assert len(backend.rows['ps_fine_payments'])==2
     page.get_by_role('link',name='Direktori Agen',exact=True).click()
     expect(page.get_by_label('Filter periode')).to_be_visible()
 
@@ -358,10 +396,24 @@ with sync_playwright() as p:
     page.get_by_role('button',name='Simpan jadwal online',exact=True).click()
     expect(page.locator('#online-editor')).to_be_empty()
     assert backend.rows['ps_online_roster'][0]['agent_id']==service_id
+    page.get_by_role('button',name='Koreksi',exact=True).click()
+    page.get_by_label('Jam mulai (WIB)',exact=True).fill('08:00')
+    page.get_by_label('Alasan koreksi',exact=True).fill('Jam layanan diperbaiki')
+    page.get_by_role('button',name='Simpan koreksi jadwal',exact=True).click()
+    expect(page.locator('#online-editor')).to_be_empty()
+    assert len(backend.rows['ps_online_roster'])==2
+    assert backend.rows['ps_online_roster'][0]['cancelled_at']
+    assert backend.rows['ps_online_roster'][1]['starts_at']=='08:00'
     page.screenshot(path=str(out/'online-desktop.png'),full_page=True)
     page.get_by_role('button',name='Klien OA LINE',exact=True).click()
     page.get_by_role('button',name='Tambah klien OA LINE',exact=True).click()
     page.get_by_label('Nama klien',exact=True).fill('Klien Simulasi')
+    page.once('dialog',lambda d:d.dismiss())
+    page.get_by_role('button',name='Jadwal Online',exact=True).click()
+    expect(page.get_by_label('Nama klien',exact=True)).to_have_value('Klien Simulasi')
+    page.once('dialog',lambda d:d.dismiss())
+    page.get_by_role('link',name='Beranda',exact=True).click()
+    expect(page.get_by_label('Nama klien',exact=True)).to_have_value('Klien Simulasi')
     page.get_by_label('Waktu chat pertama (WIB)',exact=True).fill('2026-10-26T10:00')
     expect(page.locator('#online-suggestion')).to_contain_text('Petugas Layanan')
     page.get_by_label('PJ tetap klien',exact=True).select_option(service_id)
@@ -426,5 +478,5 @@ with sync_playwright() as p:
     assert mobile.locator('#shift-form [name="agent"]').input_value()==AGENT
     assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors,errors
-    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker','active period and default profile period','invalid operational hours rejected','filtered CSV download','search retains keyboard focus','legacy routes removed','online roster eligibility UI','online client save and failed write','WIB contact time','stable client owner','online service notes and IG queue'],'screenshots':str(out)}))
+    print(json.dumps({'result':'passed','backend':'mock HTTP, no live Supabase writes','checks':['login failure','admin-only gate','no seeded records','failed write preserved form','agent save','private photo upload','session restore and signed media','dated shift','attendance time','editorial upload and save','conflict handling','logout clears records','nonadmin denied','mobile layouts','legacy import preview and deduplication','distinct service and data divisions','volunteer flag preservation','regular duty cannot be relabeled as volunteering','editable PI positions','BPH and member presets','directory substring search and combined filters','name sorting','identity edits preserve record references','searchable agent ID selection','keyboard and mobile picker','active period and default profile period','invalid operational hours rejected','filtered CSV download','search retains keyboard focus','legacy routes removed','online roster eligibility UI','online client save and failed write','WIB contact time','stable client owner','online service notes and IG queue','payment receipt and reversal UI','atomic roster correction UI','unsaved form survives cancelled navigation'],'screenshots':str(out)}))
     browser.close()

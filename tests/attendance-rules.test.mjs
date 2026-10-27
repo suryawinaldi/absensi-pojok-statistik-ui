@@ -101,3 +101,8 @@ test("offline PJ is fined for absence, with captured tariff, but retains other e
   }
   assert.equal(shiftFine({ ...pj, extra: true }, settings, session).amount, 0);
 });
+
+test("zero-minute regular attendance counts as one recorded session", () => {
+  assert.deepEqual(contribution({status:'Hadir',time:'13:00',extra:false}, session), {totalMinutes:0,regularSessions:1,extraMinutes:0});
+  assert.equal(contribution({status:'Hadir',time:'13:00',extra:true},session).regularSessions,0);
+});

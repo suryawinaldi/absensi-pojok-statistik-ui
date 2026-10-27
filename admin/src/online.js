@@ -5,7 +5,7 @@ const field = (title,control) => `<label class="form-field"><span>${title}</span
 const input = (name,value='',type='text',attrs='') => `<input class="input" name="${name}" type="${type}" value="${esc(value)}" ${attrs}>`;
 const when = value => new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',dateStyle:'medium',timeStyle:'short'}).format(new Date(value))+' WIB';
 
-export function createOnlineWorkspace({client, root, state, allowed, active, busy, setBusy, toast, showPost}) {
+export function createOnlineWorkspace({client, root, state, allowed, active, busy, setBusy, toast, showPost, formGuard}) {
   let data={roster:[],clients:[],notes:[],events:[]}, tab='roster', selectedDate=wibDateTime(new Date()).slice(0,10), epoch=0;
   let selectedClient=null, search='', statusFilter='', ownerFilter='';
   const name = id => state().agents.find(a=>a.id===id)?.name || 'Belum ditetapkan';
@@ -23,7 +23,7 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
     if(['42P01','PGRST205'].includes(error?.code)) return 'Layanan online belum diaktifkan di database. Fitur offline tetap tersedia.';
     if(error?.code==='23505') return 'Identitas LINE atau jadwal sudah terdaftar. Cari data lama sebelum menambah.';
     if(error?.code==='23514') return error.message || 'Data belum sesuai aturan layanan online.';
-    if(error?.code==='CONFLICT') return 'Data berubah di perangkat lain. Muat ulang lalu periksa sebelum menyimpan kembali.';
+    if(['CONFLICT','40001'].includes(error?.code)) return 'Data berubah di perangkat lain. Muat ulang lalu periksa sebelum menyimpan kembali.';
     return 'Belum berhasil. Periksa koneksi, lalu muat ulang untuk memastikan hasil sebelum mengulangi penyimpanan.';
   }
   async function refresh() {
@@ -50,7 +50,7 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
     return `<div class="online-toolbar">${field('Tanggal layanan',input('online-date',selectedDate,'date','required'))}<button class="button primary" data-online="new-roster">Tambah jadwal online</button><button class="button" data-online="new-exception">Pengecualian harian</button></div>
     ${doubled?'<p class="banner">Petugas yang sama menangani kedua kanal pada tanggal ini. Tinjau beban kerjanya.</p>':''}
     <div class="online-summary">${ONLINE_CHANNELS.map(channel=>{const a=assignment(channel,selectedDate);return `<section class="panel online-panel"><p class="eyebrow">${channel}</p><h2>${esc(a.agent?.name||a.reason)}</h2><p>${a.row?`${a.row.starts_at.slice(0,5)}–${a.row.ends_at.slice(0,5)} WIB`:'Hari dan jam belum diatur'}</p>${a.row?.reason?`<p class="help">${esc(a.row.reason)}</p>`:''}</section>`}).join('')}</div>
-    <section class="panel online-panel"><h2>Riwayat pola mingguan & pengecualian</h2><p class="help">Pola berulang hanya pada hari yang kamu pilih. Jadwal lama tidak ditimpa; akhiri masa berlaku sebelum membuat pola pengganti. Pengecualian harian mengutamakan tanggal khusus.</p><div class="table-scroll"><table><thead><tr><th>Kanal / hari</th><th>Petugas</th><th>Jam WIB</th><th>Berlaku</th><th>Tindakan</th></tr></thead><tbody>${[...data.roster].sort((a,b)=>b.valid_from.localeCompare(a.valid_from)).map(r=>`<tr><td>${esc(r.channel)}<br>${r.exception_date?`Khusus ${r.exception_date}`:ONLINE_DAYS[r.weekday]}</td><td>${esc(name(r.agent_id))}${r.agent_id&&!eligibleOnlineAgent(state().agents.find(a=>a.id===r.agent_id))?'<br><strong class="online-warning">Perlu pengganti</strong>':''}</td><td>${r.starts_at.slice(0,5)}–${r.ends_at.slice(0,5)}</td><td>${r.valid_from}<br>s.d. ${r.valid_until||'seterusnya'}</td><td>${!r.exception_date&&(!r.valid_until||r.valid_until>=wibDateTime(new Date()).slice(0,10))?`<button class="text-button" data-online="end-roster" data-id="${r.id}">Akhiri jadwal</button>`:'Tersimpan'}</td></tr>`).join('')||'<tr><td colspan="5">Belum ada jadwal. Tambahkan hari, jam, dan petugas secara eksplisit.</td></tr>'}</tbody></table></div></section>`;
+    <section class="panel online-panel"><h2>Riwayat pola mingguan & pengecualian</h2><p class="help">Pola berulang hanya pada hari yang kamu pilih. Jadwal lama tidak ditimpa; akhiri masa berlaku sebelum membuat pola pengganti. Pengecualian harian mengutamakan tanggal khusus.</p><div class="table-scroll"><table><thead><tr><th>Kanal / hari</th><th>Petugas</th><th>Jam WIB</th><th>Berlaku</th><th>Tindakan</th></tr></thead><tbody>${[...data.roster].sort((a,b)=>b.valid_from.localeCompare(a.valid_from)).map(r=>`<tr><td>${esc(r.channel)}<br>${r.exception_date?`Khusus ${r.exception_date}`:ONLINE_DAYS[r.weekday]}</td><td>${esc(name(r.agent_id))}${r.agent_id&&!eligibleOnlineAgent(state().agents.find(a=>a.id===r.agent_id))?'<br><strong class="online-warning">Perlu pengganti</strong>':''}</td><td>${r.starts_at.slice(0,5)}–${r.ends_at.slice(0,5)}</td><td>${r.valid_from}<br>s.d. ${r.valid_until||'seterusnya'}</td><td>${r.cancelled_at?`<span>Dibatalkan</span><br><small>${esc(r.cancellation_reason)}</small>`:`<button class="text-button" data-online="correct-roster" data-id="${r.id}">Koreksi</button><button class="text-button" data-online="cancel-roster" data-id="${r.id}">Batalkan</button>`}${!r.cancelled_at&&!r.exception_date&&(!r.valid_until||r.valid_until>=wibDateTime(new Date()).slice(0,10))?`<button class="text-button" data-online="end-roster" data-id="${r.id}">Akhiri jadwal</button>`:'Tersimpan'}</td></tr>`).join('')||'<tr><td colspan="5">Belum ada jadwal. Tambahkan hari, jam, dan petugas secara eksplisit.</td></tr>'}</tbody></table></div></section>`;
   }
   function instagramView() {
     const posts=state().posts.filter(p=>p.date===selectedDate).sort((a,b)=>a.time.localeCompare(b.time));
@@ -58,7 +58,7 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
   }
   function clientCards() {
     return data.clients.filter(c=>(!statusFilter||c.status===statusFilter)&&(!ownerFilter||(ownerFilter==='none'?!c.owner_id:c.owner_id===ownerFilter))&&`${c.name} ${c.line_id||''}`.toLocaleLowerCase('id').includes(search.toLocaleLowerCase('id')))
-      .sort((a,b)=>b.first_contact_at.localeCompare(a.first_contact_at)).map(c=>`<button class="panel online-client" data-online="client" data-id="${c.id}"><strong>${esc(c.name)}</strong><span>${esc(c.status)}</span><span>PJ tetap: ${esc(name(c.owner_id))}</span><small>${when(c.first_contact_at)}</small>${c.owner_id&&!eligibleOnlineAgent(state().agents.find(a=>a.id===c.owner_id))?'<span class="online-warning">PJ perlu ditinjau; alihkan secara eksplisit.</span>':''}</button>`).join('')||'<p class="empty">Belum ada klien yang sesuai.</p>';
+      .sort((a,b)=>b.first_contact_at.localeCompare(a.first_contact_at)).map(c=>`<button class="panel online-client" data-online="client" data-id="${c.id}"><strong>${esc(c.name)}</strong><span>${esc(c.status)}</span><span>PJ tetap: ${esc(name(c.owner_id))}</span><span>${c.status==='Selesai'?'Selesai':`Tanpa pembaruan ${Math.max(0,Math.floor((Date.now()-Math.max(new Date(c.first_contact_at).getTime(),...data.notes.filter(n=>n.client_id===c.id).map(n=>new Date(n.occurred_at).getTime())))/3600000))} jam`}</span><small>${when(c.first_contact_at)}</small>${c.owner_id&&!eligibleOnlineAgent(state().agents.find(a=>a.id===c.owner_id))?'<span class="online-warning">PJ perlu ditinjau; alihkan secara eksplisit.</span>':''}</button>`).join('')||'<p class="empty">Belum ada klien yang sesuai.</p>';
   }
   function clientsView() {
     const counts=state().agents.filter(a=>data.clients.some(c=>c.owner_id===a.id&&c.status!=='Selesai')).map(a=>`${a.name}: ${data.clients.filter(c=>c.owner_id===a.id&&c.status!=='Selesai').length}`).join(' · ');
@@ -73,8 +73,9 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
     box.innerHTML=`<section class="panel online-panel online-editor"><div class="online-toolbar"><h2 tabindex="-1">${title}</h2><button class="text-button" data-online="cancel">Tutup formulir</button></div>${content}</section>`;
     box.querySelector('h2').focus(); box.scrollIntoView({block:'nearest'});
   }
-  function rosterForm(exception=false) {
-    editor(exception?'Pengecualian satu hari':'Tambah pola mingguan',`<form data-online-form="roster"><input type="hidden" name="exception" value="${exception?'yes':''}"><div class="form-row">${field('Kanal',`<select name="channel">${opt(ONLINE_CHANNELS)}</select>`)}${exception?'':field('Hari',`<select name="weekday">${ONLINE_DAYS.map((d,i)=>`<option value="${i}">${d}</option>`).join('')}</select>`)}</div>${field('Mulai berlaku',input('valid_from',selectedDate,'date','required'))}${exception?'':field('Berlaku sampai (opsional)',input('valid_until','','date'))}<div class="form-row">${field('Jam mulai (WIB)',input('starts_at','','time','required'))}${field('Jam selesai (WIB)',input('ends_at','','time','required'))}</div>${field('Petugas online',agentSelect('agent_id','',exception?'Tidak ada petugas / libur':'Pilih petugas',!exception))}${field('Alasan / catatan',`<textarea name="reason" maxlength="1000" ${exception?'required':''}></textarea>`)}<p class="help">Hanya agen aktif Pelayanan dan Konsultasi. Jam akhir tidak termasuk cakupan layanan. Penggantian pada tanggal tertentu tidak mengubah PJ klien lama.</p><button class="button primary" type="submit">Simpan jadwal online</button></form>`);
+  function rosterForm(exception=false,row=null) {
+    const correcting=Boolean(row), data=row||{};
+    editor(correcting?'Koreksi jadwal tersimpan':exception?'Pengecualian satu hari':'Tambah pola mingguan',`<form data-online-form="${correcting?'correct-roster':'roster'}" data-id="${esc(data.id||'')}"><input type="hidden" name="exception" value="${exception?'yes':''}"><div class="form-row">${field('Kanal',`<select name="channel">${opt(ONLINE_CHANNELS,data.channel)}</select>`)}${exception?'':field('Hari',`<select name="weekday">${ONLINE_DAYS.map((d,i)=>`<option value="${i}" ${i===data.weekday?'selected':''}>${d}</option>`).join('')}</select>`)}</div>${field('Mulai berlaku',input('valid_from',data.valid_from||selectedDate,'date','required'))}${exception?'':field('Berlaku sampai (opsional)',input('valid_until',data.valid_until||'','date'))}<div class="form-row">${field('Jam mulai (WIB)',input('starts_at',data.starts_at?.slice(0,5)||'','time','required'))}${field('Jam selesai (WIB)',input('ends_at',data.ends_at?.slice(0,5)||'','time','required'))}</div>${field('Petugas online',agentSelect('agent_id',data.agent_id||'',exception?'Tidak ada petugas / libur':'Pilih petugas',!exception))}${field(correcting?'Alasan koreksi':'Alasan / catatan',`<textarea name="reason" maxlength="1000" ${exception||correcting?'required':''}>${correcting?'':esc(data.reason||'')}</textarea>`)}<p class="help">${correcting?'Jadwal lama ditandai dibatalkan dan versi pengganti disimpan bersama dalam satu transaksi. PJ klien dan publikasi yang sudah tercatat tetap tersimpan.':'Hanya agen aktif Pelayanan dan Konsultasi. Jam akhir tidak termasuk cakupan layanan.'}</p><button class="button primary" type="submit">${correcting?'Simpan koreksi jadwal':'Simpan jadwal online'}</button></form>`);
   }
   function clientForm() {
     editor('Tambah klien OA LINE',`<form data-online-form="client"><p class="help">Cari nama/ID LINE di daftar terlebih dahulu untuk menghindari duplikasi. Nama sama tidak otomatis dianggap orang yang sama.</p>${field('Nama klien',input('name','','text','required maxlength="120"'))}${field('ID LINE (opsional)',input('line_id','','text','maxlength="120"'))}${field('Waktu chat pertama (WIB)',input('first_contact',wibDateTime(new Date()),'datetime-local','required'))}<p class="banner" id="online-suggestion" role="status"></p>${field('PJ tetap klien',agentSelect('owner_id','','Ikuti jadwal / belum ditetapkan',false))}${field('Alasan penetapan manual',`<textarea name="transfer_reason" maxlength="1000"></textarea>`)}${field('Ringkasan kebutuhan',`<textarea name="summary" maxlength="4000"></textarea>`)}<button class="button primary" type="submit">Simpan klien</button></form>`);
@@ -97,12 +98,18 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
   root.addEventListener('click',e=>{
     const b=e.target.closest('[data-online]'); if(!b||!allowed()||busy())return;
     const a=b.dataset.online;
+    if(['reload','tab','cancel','new-roster','new-exception','new-client','client','end-roster','correct-roster','cancel-roster','post'].includes(a) && !formGuard.discard(root)) return;
     if(a==='reload') void refresh();
     if(a==='tab'){tab=b.dataset.tab;selectedClient=null;paint();}
     if(a==='cancel') root.querySelector('#online-editor').replaceChildren();
     if(a==='new-roster')rosterForm(); if(a==='new-exception')rosterForm(true);
     if(a==='new-client')clientForm(); if(a==='client')detail(b.dataset.id);
     if(a==='post')showPost(b.dataset.id);
+    if(a==='correct-roster') {const row=data.roster.find(r=>r.id===b.dataset.id);rosterForm(Boolean(row.exception_date),row);}
+    if(a==='cancel-roster') {
+      const row=data.roster.find(r=>r.id===b.dataset.id);
+      editor('Batalkan jadwal',`<form data-online-form="cancel-roster" data-id="${row.id}"><p>${esc(row.channel)} · ${esc(name(row.agent_id))}. Pembatalan tersimpan di riwayat.</p>${field('Alasan pembatalan',`<textarea name="reason" required maxlength="1000"></textarea>`)}<button class="button primary" type="submit">Konfirmasi pembatalan jadwal</button></form>`);
+    }
     if(a==='end-roster') {
       const row=data.roster.find(r=>r.id===b.dataset.id);
       editor('Akhiri masa berlaku',`<form data-online-form="end" data-id="${row.id}"><p>${esc(row.channel)} · ${ONLINE_DAYS[row.weekday]} · ${esc(name(row.agent_id))}</p>${field('Tanggal akhir (masih termasuk jadwal)',input('valid_until',row.valid_until||selectedDate,'date','required'))}<p class="help">Pola pengganti dimulai setelah tanggal ini. Untuk pergantian hari ini, gunakan pengecualian harian.</p><button type="submit" class="button primary">Simpan tanggal akhir</button></form>`);
@@ -115,21 +122,30 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
   });
   root.addEventListener('change',e=>{
     if(!allowed()||busy())return;
-    if(e.target.name==='online-date' && e.target.value){selectedDate=e.target.value;paint();}
+    if(e.target.name==='online-date' && e.target.value){if(!formGuard.discard(root)){e.target.value=selectedDate;return;}selectedDate=e.target.value;paint();}
     if(e.target.name==='client-status'){statusFilter=e.target.value;root.querySelector('#online-client-list').innerHTML=clientCards();}
     if(e.target.name==='client-owner'){ownerFilter=e.target.value;root.querySelector('#online-client-list').innerHTML=clientCards();}
   });
   root.addEventListener('submit',async e=>{
     const form=e.target.closest('[data-online-form]'); if(!form)return; e.preventDefault();
     if(!allowed()||busy())return;
+    if(!formGuard.discardOther(root,form))return;
     const values=Object.fromEntries(new FormData(form)),kind=form.dataset.onlineForm,token=epoch;
     const controls=[...root.querySelectorAll('input,select,textarea,button')].map(el=>({el,disabled:el.disabled}));
     controls.forEach(({el})=>el.disabled=true);setBusy(true);
     let committed=false;
     try {
-      if(kind==='roster') {
+      if(['roster','correct-roster'].includes(kind)) {
         if(values.ends_at<=values.starts_at)throw {code:'23514',message:'Jam selesai harus setelah jam mulai.'};
-        await write('ps_online_roster',{channel:values.channel,weekday:values.exception?new Date(values.valid_from+'T12:00:00+07:00').getUTCDay():Number(values.weekday),valid_from:values.valid_from,valid_until:values.exception?values.valid_from:values.valid_until||null,exception_date:values.exception?values.valid_from:null,starts_at:values.starts_at,ends_at:values.ends_at,agent_id:values.agent_id||null,reason:values.reason.trim()});
+        const replacement={channel:values.channel,weekday:values.exception?new Date(values.valid_from+'T12:00:00+07:00').getUTCDay():Number(values.weekday),valid_from:values.valid_from,valid_until:values.exception?values.valid_from:values.valid_until||null,exception_date:values.exception?values.valid_from:null,starts_at:values.starts_at,ends_at:values.ends_at,agent_id:values.agent_id||null,reason:values.reason.trim()};
+        if(kind==='correct-roster') {
+          const old=data.roster.find(r=>r.id===form.dataset.id);
+          const r=await client.rpc('ps_correct_online_roster',{row_id:old.id,expected_version:old.version,reason:values.reason.trim(),replacement});if(r.error)throw r.error;
+        } else await write('ps_online_roster',replacement);
+      }
+      if(kind==='cancel-roster') {
+        const old=data.roster.find(r=>r.id===form.dataset.id);
+        const r=await client.rpc('ps_correct_online_roster',{row_id:old.id,expected_version:old.version,reason:values.reason.trim(),replacement:null});if(r.error)throw r.error;
       }
       if(kind==='end')await write('ps_online_roster',{valid_until:values.valid_until},data.roster.find(r=>r.id===form.dataset.id));
       if(kind==='client')await write('ps_online_clients',{name:values.name.trim(),line_id:values.line_id.trim()||null,first_contact_at:fromWib(values.first_contact),owner_id:values.owner_id||null,transfer_reason:values.transfer_reason.trim(),summary:values.summary.trim()});
@@ -138,6 +154,7 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
       if(kind==='transfer')await write('ps_online_clients',{owner_id:values.owner_id,transfer_reason:values.transfer_reason.trim()},data.clients.find(c=>c.id===form.dataset.id));
       if(kind==='note')await write('ps_online_notes',{client_id:form.dataset.id,body:values.body.trim(),occurred_at:fromWib(values.occurred_at)});
       committed=true;
+      formGuard.clear(root);
       if(token===epoch&&allowed()){toast('Perubahan layanan online tersimpan.'); await refresh(); if(['status','transfer','note','client-edit'].includes(kind)&&active())detail(form.dataset.id);}
     } catch(error) {if(token===epoch&&allowed())toast(errorText(error));}
     finally {setBusy(false); if(!committed)controls.forEach(({el,disabled})=>el.disabled=disabled);}
@@ -161,5 +178,20 @@ export function createOnlineWorkspace({client, root, state, allowed, active, bus
         element.textContent='Petugas publikasi belum dapat diperiksa. Coba muat ulang layanan online.';
     }
   }
-  return {render:refresh,publicationPreview,reset(){epoch++;data={roster:[],clients:[],notes:[],events:[]};selectedClient=null;search='';statusFilter='';ownerFilter='';}};
+  async function homeSummary(element) {
+    if(!element||!allowed())return;
+    try {
+      const [roster,clients]=await Promise.all([rows('ps_online_roster'),rows('ps_online_clients')]);
+      if(!element.isConnected||!allowed())return;
+      const today=wibDateTime(new Date()).slice(0,10);
+      const blocks=ONLINE_CHANNELS.map(channel=>{
+        const a=onlineAssignment(roster,state().agents,channel,today);
+        return `<a class="panel operational-card" href="#online"><span>${channel} hari ini</span><strong>${esc(a.agent?.name||a.reason)}</strong><small>${a.row?`${a.row.starts_at.slice(0,5)}–${a.row.ends_at.slice(0,5)} WIB`:'Atur jadwal layanan'}</small></a>`;
+      });
+      const open=clients.filter(c=>c.status!=='Selesai');
+      blocks.push(`<a class="panel operational-card" href="#online"><span>Klien perlu ditangani</span><strong>${open.length} layanan terbuka</strong><small>${open.filter(c=>!c.owner_id).length} belum memiliki PJ</small></a>`);
+      element.innerHTML=blocks.join('');
+    } catch {if(element.isConnected&&allowed())element.innerHTML='<p class="help">Ringkasan online belum tersedia. <a class="text-button" href="#online">Buka Layanan Online untuk memuat ulang</a></p>';}
+  }
+  return {render:refresh,publicationPreview,homeSummary,reset(){epoch++;data={roster:[],clients:[],notes:[],events:[]};selectedClient=null;search='';statusFilter='';ownerFilter='';}};
 }

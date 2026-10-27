@@ -4,6 +4,7 @@ export const TABLES = {
   posts: "ps_posts",
   weeklySchedule: "ps_weekly_schedule",
   settings: "ps_settings",
+  payments: "ps_fine_payments",
 };
 export const BUCKET = "pojok-media";
 export const SETTINGS_ID = "00000000-0000-4000-8000-000000000001";
@@ -40,6 +41,7 @@ export const emptyState = () => ({
   posts: [],
   weeklySchedule: [],
   settings: [],
+  payments: [],
 });
 
 export const isInlineImage = (value) =>
@@ -59,7 +61,7 @@ export function readableError(error) {
     return "Akses ditolak. Masuk menggunakan akun admin yang telah diizinkan.";
   if (["42P01", "PGRST205", "PGRST202", "PGRST204"].includes(error?.code))
     return "Tabel fitur baru belum diaktifkan di Supabase. Jalankan migrasi SQL terbaru di Supabase SQL Editor.";
-  if (error?.code === "CONFLICT")
+  if (["CONFLICT", "40001"].includes(error?.code))
     return "Data ini telah berubah di perangkat lain. Muat ulang sebelum menyimpan lagi.";
   if (error?.code === "NOT_ADMIN")
     return "Akun ini belum terdaftar sebagai admin workspace.";
@@ -119,6 +121,7 @@ function mapLegacyPosition(name, isBph) {
 }
 
 function rowToModel(collection, row, signed) {
+  if (collection === "payments") return row;
   if (collection === "agents")
     return {
       id: row.id,
@@ -306,6 +309,7 @@ export function createRepository(
   async function commit(before, after) {
     const change = findChange(before, after);
     const { collection, kind, row, old } = change;
+    if (collection === "payments") throw new Error("Use the payment transaction API.");
     const table = TABLES[collection];
     const uploaded = [];
     let obsolete = [];
@@ -475,6 +479,11 @@ export function createRepository(
   }
   return {
     requireAdmin,
+    async recordFinePayment(params, reverse=false) {
+      const r = await client.rpc(reverse ? "ps_reverse_fine_payment" : "ps_record_fine_payment", params);
+      if (r.error) throw r.error;
+      return r.data;
+    },
     load,
     commit,
     isSafeMedia,

@@ -1,3 +1,5 @@
+import { createFormGuard } from "./form-guard.js";
+import { fromWib, wibDateTime } from "./online-rules.js";
 import { createOnlineWorkspace } from "./online.js";
 import { csvCell } from "./csv.js";
 import { divisionChoices } from "./agent-divisions.js";
@@ -148,10 +150,12 @@ let page = "beranda",
   fineSearch = "",
   draggedWeeklyId = "";
 let toastTimer, lastFocused;
+let analyticsExpanded = false;
 const dialog = document.querySelector("#detail-dialog");
 const main = document.querySelector("#main");
+const formGuard = createFormGuard(() => authorized);
 const online = createOnlineWorkspace({
-  client, root: main, state: () => state,
+  client, root: main, state: () => state, formGuard,
   allowed: () => authorized, active: () => authorized && page === "online",
   busy: () => operationPending,
   setBusy: value => {
@@ -351,6 +355,9 @@ async function update(mutator, message) {
     const saved = await repository.commit(state, next);
     if (epoch !== sessionEpoch || !authorized) return false;
     state = saved;
+    formGuard.clear(dialog);
+    const settingsForm = document.querySelector("#settings-form");
+    if (settingsForm) delete settingsForm.dataset.unsaved;
     toast(message || "Perubahan tersimpan.");
     return true;
   } catch (error) {
@@ -431,7 +438,7 @@ function renderNav() {
   document.querySelector("#navigation").innerHTML = items
     .map(
       ([key, ic, label]) =>
-        `<a href="#${key}" class="nav-item ${page === key ? "active" : ""}" ${page === key ? 'aria-current="page"' : ""}>${icon(ic)}<span>${label}</span>${key === "konten" ? `<span class="nav-count">${state.posts.filter((p) => p.status === "Review").length}</span>` : ""}</a>`,
+        `<a aria-label="${label}" href="#${key}" class="nav-item ${page === key ? "active" : ""}" ${page === key ? 'aria-current="page"' : ""}>${icon(ic)}<span class="nav-desktop-label">${label}</span><span class="nav-mobile-label" aria-hidden="true">${({beranda:"Beranda",agen:"Agen",kehadiran:"Offline",konten:"Konten",online:"Online"})[key]}</span>${key === "konten" ? `<span class="nav-count">${state.posts.filter((p) => p.status === "Review").length}</span>` : ""}</a>`,
     )
     .join("");
   document.querySelector("#breadcrumb").textContent = items.find(
@@ -532,8 +539,8 @@ function renderHome() {
             .join("")
         : '<tr><td colspan="3">Belum ada penugasan hari ini.</td></tr>'
     }</tbody></table></div><div class="panel-foot">${icon("info")}Kehadiran dicatat dan dikelola oleh admin.</div></div>
- <div class="stack"><section class="panel"><div class="panel-header"><h2 class="panel-title">Perlu ditindaklanjuti</h2><span class="pill-count">${Number(review.length > 0) + Number(pending > 0) + Number(unpaidFinesTotal > 0)}</span></div><div class="task-list">${review.length ? `<button class="task-row" data-action="review-filter"><span class="task-icon">${icon("review")}</span><span><strong>${review.length} konten menunggu review</strong><small>Periksa materi sebelum publikasi</small></span>${icon("right")}</button>` : ""}${pending ? `<a class="task-row" href="#kehadiran"><span class="task-icon blue">${icon("clock")}</span><span><strong>${pending} kehadiran belum dicatat</strong><small>Lengkapi catatan penugasan hari ini</small></span>${icon("right")}</a>` : ""}${unpaidFinesTotal > 0 ? `<button class="task-row" data-action="open-fines-tab"><span class="task-icon">${icon("info")}</span><span><strong>${formatRupiah(unpaidFinesTotal)} denda belum lunas</strong><small>Terkumpul lunas: ${formatRupiah(paidFinesTotal)}</small></span>${icon("right")}</button>` : ""}${!pending && !review.length && !unpaidFinesTotal ? '<p class="help">Semua tindak lanjut sudah selesai.</p>' : ""}</div></section><section class="panel"><div class="panel-header"><h2 class="panel-title">Agenda publikasi</h2><a href="#konten" class="text-button">Kalender ${icon("arrow")}</a></div><div class="upcoming">${upcoming.map(upcomingRow).join("") || '<p class="help">Belum ada agenda publikasi.</p>'}</div></section></div></div>` +
-    `<section class="analytics-section" aria-label="Analitik keaktifan dan durasi jaga">
+ <div class="stack"><section class="panel"><div class="panel-header"><h2 class="panel-title">Perlu ditindaklanjuti</h2><span class="pill-count">${Number(review.length > 0) + Number(pending > 0) + Number(unpaidFinesTotal > 0)}</span></div><div class="task-list">${review.length ? `<button class="task-row" data-action="review-filter"><span class="task-icon">${icon("review")}</span><span><strong>${review.length} konten menunggu review</strong><small>Periksa materi sebelum publikasi</small></span>${icon("right")}</button>` : ""}${pending ? `<a class="task-row" href="#kehadiran"><span class="task-icon blue">${icon("clock")}</span><span><strong>${pending} kehadiran belum dicatat</strong><small>Lengkapi catatan penugasan hari ini</small></span>${icon("right")}</a>` : ""}${unpaidFinesTotal > 0 ? `<button class="task-row" data-action="open-fines-tab"><span class="task-icon">${icon("info")}</span><span><strong>${formatRupiah(unpaidFinesTotal)} denda belum lunas</strong><small>Kas tercatat: ${formatRupiah(paymentTotals())}</small></span>${icon("right")}</button>` : ""}${!pending && !review.length && !unpaidFinesTotal ? '<p class="help">Semua tindak lanjut sudah selesai.</p>' : ""}</div></section><section class="panel"><div class="panel-header"><h2 class="panel-title">Agenda publikasi</h2><a href="#konten" class="text-button">Kalender ${icon("arrow")}</a></div><div class="upcoming">${upcoming.map(upcomingRow).join("") || '<p class="help">Belum ada agenda publikasi.</p>'}</div></section></div></div>` +
+    `<section class="operational-summary" id="online-home-summary" aria-label="Layanan online hari ini"><p class="help">Memuat ringkasan layanan online…</p></section><details class="analytics-details" id="analytics-details" ${analyticsExpanded?'open':''}><summary>Analitik kehadiran & apresiasi agen</summary><section class="analytics-section" aria-label="Analitik keaktifan dan durasi jaga">
       <div class="toolbar" style="margin-top:28px">
         <div>
           <p class="eyebrow">ANALITIK KEHADIRAN & APRESIASI</p>
@@ -599,7 +606,8 @@ function renderHome() {
 
       ${renderRankingChart(top10ByMinutes.filter(x => x.totalMinutes > 0), "duration")}
       ${renderRankingChart(top10BySessions, "sessions")}
-    </section>`;
+    </section></details>`;
+  void online.homeSummary(document.querySelector("#online-home-summary"));
 }
 
 function showCertificate(agentId) {
@@ -673,7 +681,7 @@ function renderAgentCards() {
           (w) => w.agent === a.id,
         ).length;
         const attendedCount = state.shifts.filter(
-          (s) => s.agent === a.id && s.status === "Hadir" && !s.extra,
+          (s) => s.agent === a.id && contribution(s, getSessionConfig(s.date, s.session)).regularSessions > 0,
         ).length;
         let heading = "";
         if (agentSort === "division" && a.division !== previousDivision) {
@@ -918,6 +926,27 @@ function renderSettingsView() {
   </form>`;
 }
 
+function paymentTotals() {
+  const reversed = new Set((state.payments || []).filter(p => p.event_type === "reversal").map(p => p.reverses));
+  return (state.payments || []).filter(p => p.event_type === "payment" && !reversed.has(p.id)).reduce((total,p) => total + Number(p.amount),0);
+}
+function showFinePayment(shiftId) {
+  const shift = state.shifts.find(s => s.id === shiftId);
+  if (!shift) return;
+  const history = (state.payments || []).filter(p => p.shift_id === shiftId).sort((a,b) => b.recorded_at.localeCompare(a.recorded_at));
+  openDialog(shift.finePaid ? "Batalkan pembayaran denda" : "Catat pembayaran denda", "TRANSAKSI KAS DENDA",
+    `<p>${esc(agentName(shift.agent))} · ${formatDate(shift.date)} · ${esc(shift.session)}</p><p><strong>${formatRupiah(calcShiftFine(shift).amount)}</strong> · ${esc(calcShiftFine(shift).reason)}</p>
+    <form id="fine-payment-form" data-id="${esc(shift.id)}" data-request-id="${id()}">
+    ${shift.finePaid ? `<label class="form-field"><span>Alasan pembatalan pembayaran</span><textarea name="reason" maxlength="1000" required></textarea></label>` : `<label class="form-field"><span>Waktu pembayaran (WIB)</span><input class="input" name="payment_time" type="datetime-local" value="${wibDateTime(new Date())}" required></label><label class="form-field"><span>Diterima oleh</span><input class="input" name="receiver" maxlength="120" required></label><label class="form-field"><span>Catatan pembayaran</span><textarea name="note_text" maxlength="1000"></textarea></label>`}
+    <p class="help">Pembayaran penuh sesuai nominal denda dihitung server. Pembatalan menambah riwayat baru; transaksi lama tetap tersimpan.</p><div class="dialog-footer"><button type="button" class="button" data-action="close">Batal</button><button type="submit" class="button primary">${shift.finePaid ? "Konfirmasi pembatalan pembayaran" : "Simpan pembayaran"}</button></div></form>
+    <h3>Riwayat transaksi</h3>${history.map(p => `<article class="online-history"><strong>${p.event_type === "reversal" ? "Pembatalan" : "Pembayaran"} · ${formatRupiah(Number(p.amount))}</strong><p>${p.paid_at ? esc(new Date(p.paid_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"}))+" WIB" : "Waktu pembayaran asli belum tercatat"}<br>Penerima: ${esc(p.received_by)}<br>${esc(p.note)}</p>${p.origin === "legacy_baseline" ? '<p class="help">Baseline status lunas lama, bukan bukti transaksi asli.</p>' : ""}</article>`).join("") || '<p class="help">Belum ada transaksi.</p>'}`);
+}
+
+function paymentHistory() {
+  const rows = [...(state.payments || [])].sort((a,b)=>b.recorded_at.localeCompare(a.recorded_at));
+  return `<details class="analytics-details"><summary>Riwayat transaksi kas (${rows.length})</summary><p class="help">Transaksi lama tetap tersimpan saat dibatalkan. Baseline lunas lama memiliki nominal perkiraan dari aturan tersimpan, tanpa waktu dan penerima asli.</p><button class="button" data-action="export-payments">Ekspor transaksi kas</button><div class="table-scroll"><table><thead><tr><th>Jenis / agen</th><th>Nominal</th><th>Waktu pembayaran</th><th>Penerima / catatan</th><th>Detail</th></tr></thead><tbody>${rows.map(p=>{const shift=state.shifts.find(s=>s.id===p.shift_id);return `<tr><td>${p.event_type === "reversal" ? "Pembatalan" : "Pembayaran"}<br>${esc(shift ? agentName(shift.agent) : "Catatan tersimpan")}</td><td>${p.event_type === "reversal" ? "−" : ""}${formatRupiah(Number(p.amount))}</td><td>${p.paid_at ? esc(new Date(p.paid_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"}))+" WIB" : "Belum tercatat"}</td><td>${esc(p.received_by)}<br>${esc(p.note)}${p.origin === "legacy_baseline" ? '<br><strong>Baseline data lama</strong>' : ''}</td><td><button class="text-button" data-action="toggle-fine-paid" data-id="${esc(p.shift_id)}">Detail transaksi</button></td></tr>`}).join('')||'<tr><td colspan="5">Belum ada transaksi kas.</td></tr>'}</tbody></table></div></details>`;
+}
+
 function filteredFines() {
   const q = fineSearch.trim().toLocaleLowerCase("id");
   return state.shifts
@@ -948,7 +977,7 @@ function renderFinesView() {
 
   return `<section class="metrics">
     ${metric("Tunggakan denda", formatRupiah(unpaidTotal), "", `${allFined.filter((x) => !x.shift.finePaid).length} catatan belum lunas`, "info")}
-    ${metric("Kas denda terkumpul", formatRupiah(paidTotal), "", `${allFined.filter((x) => x.shift.finePaid).length} catatan sudah lunas`, "check")}
+    ${metric("Kas denda tercatat", formatRupiah(paymentTotals()), "", `${allFined.filter((x) => x.shift.finePaid).length} catatan sudah lunas`, "check")}
     ${metric("Total kasus denda", allFined.length, "kasus", "Otomatis dari keterlambatan & bolos", "clock")}
     ${metric("Aturan denda aktif", formatRupiah(activeSettings().lateFineAmount), "/ telat", `Bolos: ${formatRupiah(activeSettings().absentFineAmount)}`, "review")}
   </section>
@@ -990,7 +1019,7 @@ function renderFinesView() {
         </tbody></table></div>`
         : '<div class="empty">Tidak ada catatan denda pada filter ini.</div>'
     }
-  </section>`;
+  </section>${paymentHistory()}`;
 }
 
 function filteredPosts() {
@@ -1063,7 +1092,7 @@ function postList(posts) {
     : '<div class="empty">Tidak ada konten pada bulan atau status ini.</div>';
 }
 function openDialog(title, eyebrow, body) {
-  if (!authorized) return;
+  if (!authorized || !formGuard.discard(dialog)) return;
   lastFocused = document.activeElement;
   document.querySelector("#dialog-content").innerHTML =
     `<div class="dialog-header"><div><p class="eyebrow">${eyebrow}</p><h2 id="dialog-title">${esc(title)}</h2></div><button class="icon-button" data-action="close" aria-label="Tutup panel">${icon("close")}</button></div><div class="dialog-body">${body}</div>`;
@@ -1083,7 +1112,7 @@ function openDialog(title, eyebrow, body) {
   dialog.scrollTop = 0;
 }
 function closeDialog() {
-  if (operationPending) return;
+  if (operationPending || !formGuard.discard(dialog)) return;
   dialog.close();
 }
 dialog.addEventListener("close", () => {
@@ -1434,6 +1463,10 @@ document.addEventListener("click", async (e) => {
   if (!button) return;
   const action = button.dataset.action,
     recordId = button.dataset.id;
+  if (formGuard.dirty(main) && !button.closest("form") && !formGuard.discard(main)) return;
+  if (["set-agent-position", "remove-draft-image"].includes(action)) {
+    const form=button.closest("form"); if(form)form.dataset.unsaved="true";
+  }
   switch (action) {
     case "set-agent-position": {
       const field = document.querySelector('#agent-form [name="position"]');
@@ -1715,14 +1748,7 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "toggle-fine-paid":
-      if (
-        await update((s) => {
-          const target = s.shifts.find((x) => x.id === recordId);
-          if (target) target.finePaid = !target.finePaid;
-        }, "Status pembayaran denda diperbarui.")
-      ) {
-        renderAttendance();
-      }
+      showFinePayment(recordId);
       break;
     case "export-attendance-csv": {
       const rows = effectiveShiftsForDate(
@@ -1755,6 +1781,14 @@ document.addEventListener("click", async (e) => {
         rows,
       );
       toast("File CSV absensi berhasil diunduh.");
+      break;
+    }
+    case "export-payments": {
+      const rows = (state.payments || []).map(p => {
+        const shift = state.shifts.find(s => s.id === p.shift_id);
+        return [p.id, shift ? agentName(shift.agent) : "", p.event_type, Number(p.amount), p.paid_at || "Belum tercatat", p.received_by, p.note, p.origin, p.recorded_at, p.reverses || ""];
+      });
+      downloadCsv(`transaksi-kas-${TODAY}.csv`, ["ID transaksi","Agen","Jenis","Nominal (Rp)","Waktu bayar (ISO)","Penerima","Catatan","Sumber","Waktu pencatatan (ISO)","Membatalkan transaksi"], rows);
       break;
     }
     case "export-fines-csv": {
@@ -1802,6 +1836,7 @@ document.addEventListener("click", async (e) => {
       break;
   }
 });
+document.addEventListener("toggle", e => {if(e.target.id === "analytics-details")analyticsExpanded=e.target.open;}, true);
 document.addEventListener("input", (e) => {
   if (e.target.id === "agent-search") {
     agentSearch = e.target.value;
@@ -1929,6 +1964,7 @@ document.addEventListener("submit", async (e) => {
   if (!authorized) return;
   if (
     ![
+      "fine-payment-form",
       "agent-form",
       "post-form",
       "shift-form",
@@ -1943,6 +1979,28 @@ document.addEventListener("submit", async (e) => {
   const data = Object.fromEntries(new FormData(form)),
     recordId = form.dataset.id;
   switch (form.id) {
+    case "fine-payment-form": {
+      if (operationPending) return;
+      const shift = state.shifts.find(s => s.id === recordId), epoch = sessionEpoch;
+      if (!shift) return;
+      operationPending = true; document.body.classList.add("saving");
+      const controls = [...form.querySelectorAll("input,textarea,button")];controls.forEach(c=>c.disabled=true);
+      let committed = false;
+      try {
+        const common = {shift_id: shift.id, expected_version: shift._version, request_id: form.dataset.requestId};
+        await repository.recordFinePayment(shift.finePaid ? {...common, reason: data.reason.trim()} : {
+          ...common,payment_time: fromWib(data.payment_time),receiver: data.receiver.trim(),note_text: data.note_text.trim(),
+        }, shift.finePaid);
+        committed = true;
+        const records = await repository.load();
+        if (epoch !== sessionEpoch || !authorized) return;
+        state = records; formGuard.clear(dialog);
+        operationPending = false; closeDialog(); renderAttendance();toast("Transaksi pembayaran tersimpan beserta riwayatnya.");
+      } catch(error) {
+        if (epoch === sessionEpoch && authorized) toast(committed ? "Transaksi sudah tersimpan. Muat ulang untuk memperbarui tampilan." : readableError(error));
+      } finally {operationPending=false;document.body.classList.remove("saving");controls.forEach(c=>c.disabled=false);}
+      break;
+    }
     case "agent-form": {
       const name = data.name.trim(),
         position = data.position.trim();
@@ -2245,9 +2303,15 @@ document.addEventListener("submit", async (e) => {
     }
   }
 });
+document.addEventListener("click", event => {
+  const target = event.target.closest('a[href^="#"], #refresh-data, #sign-out, [data-action="attendance-tab"], [data-action="prev-day"], [data-action="next-day"], [data-action="today-attendance"]');
+  if (target?.getAttribute('href') === '#main') return;
+  if (target && !operationPending && !formGuard.discard()) { event.preventDefault(); event.stopImmediatePropagation(); }
+}, true);
 window.addEventListener("hashchange", () => {
   if (!authorized || operationPending) return;
   const next = location.hash.slice(1);
+  if (next !== page && !formGuard.discard()) {history.replaceState(null, "", "#" + page);return;}
   page = ["beranda", "agen", "kehadiran", "konten", "online"].includes(next)
     ? next
     : "beranda";
@@ -2356,7 +2420,7 @@ document.querySelector("#sign-out").addEventListener("click", async () => {
   else clearWorkspace();
 });
 async function refreshWorkspace({ silent = false } = {}) {
-  if (!authorized || operationPending || dialog.open) {
+  if (!authorized || operationPending || dialog.open || formGuard.dirty()) {
     if (!silent && dialog.open)
       toast(
         "Tutup panel terlebih dahulu agar perubahan yang belum disimpan tetap aman.",
@@ -2401,7 +2465,7 @@ client.auth.onAuthStateChange((event) => {
     clearWorkspace("Sesi telah berakhir. Silakan masuk kembali.");
 });
 dialog.addEventListener("cancel", (event) => {
-  if (operationPending) event.preventDefault();
+  if (operationPending || !formGuard.discard(dialog)) event.preventDefault();
 });
 async function bootstrap() {
   authLoading(true, "Memeriksa sesi…");

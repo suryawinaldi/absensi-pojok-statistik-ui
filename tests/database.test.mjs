@@ -350,4 +350,43 @@ test("workspace migration and access policies on local PostgreSQL", async (t) =>
     await assert.rejects(db.query("select * from ps_online_clients"), /permission denied/);
   });
 
+  await t.test("reliability migration closes legacy access, preserves schedule corrections, and records payments", async () => {
+    await db.exec("reset role");
+    await db.exec("create table pengaturan_sistem(id integer primary key, value text); grant all on pengaturan_sistem to anon,authenticated; insert into pengaturan_sistem values (1,'Retained')");
+    await db.exec(await readFile(new URL("../supabase/migrations/20261027053625_operational_reliability.sql", import.meta.url), "utf8"));
+    await actor(null,'anon');
+    await assert.rejects(db.query("select * from pengaturan_sistem"), /permission denied/);
+    await assert.rejects(db.query("select ps_is_admin()"), /permission denied/);
+    await actor(OTHER);
+    assert.equal((await db.query("select * from pengaturan_sistem")).rows.length,0);
+    await assert.rejects(db.query("insert into pengaturan_sistem values (2,'No')"), /row-level security/);
+    await actor(ADMIN);
+    assert.equal((await db.query("select value from pengaturan_sistem")).rows[0].value,'Retained');
+    const roster=(await db.query("select * from ps_online_roster where channel='OA LINE' and exception_date is null limit 1")).rows[0];
+    const bad={channel:'OA LINE',weekday:1,valid_from:'2026-10-26',valid_until:null,exception_date:null,starts_at:'17:00',ends_at:'09:00',agent_id:roster.agent_id};
+    await assert.rejects(db.query("select ps_correct_online_roster($1,$2,'Bad replacement',$3)",[roster.id,roster.version,JSON.stringify(bad)]));
+    assert.equal((await db.query("select cancelled_at from ps_online_roster where id=$1",[roster.id])).rows[0].cancelled_at,null);
+    const newId=(await db.query("select ps_correct_online_roster($1,$2,'Correction',$3) as id",[roster.id,roster.version,JSON.stringify({...bad,starts_at:'08:00',ends_at:'18:00'})])).rows[0].id;
+    assert.notEqual(newId,roster.id);
+    assert.ok((await db.query("select cancelled_at from ps_online_roster where id=$1",[roster.id])).rows[0].cancelled_at);
+    await assert.rejects(db.query("select ps_correct_online_roster($1,$2,'Stale',null)",[roster.id,roster.version]), /Jadwal berubah/);
+    const inserted=(await db.query("insert into ps_shifts(agent_id,date,session,status) values ($1,'2026-10-29','Pagi','Tidak hadir') returning *",[AGENT])).rows[0];
+    await assert.rejects(db.query("update ps_shifts set fine_paid=true where id=$1",[inserted.id]), /transaksi pembayaran/);
+    const requestId='88888888-8888-4888-8888-888888888888';
+    await db.query("select ps_record_fine_payment($1,$2,$3,now(),'Bendahara','Cash')",[inserted.id,inserted.version,requestId]);
+    await db.query("select ps_record_fine_payment($1,$2,$3,now(),'Bendahara','Retry')",[inserted.id,inserted.version,requestId]);
+    assert.equal((await db.query("select * from ps_fine_payments where id=$1",[requestId])).rows.length,1);
+    const paid=(await db.query("select * from ps_shifts where id=$1",[inserted.id])).rows[0];
+    assert.equal(paid.fine_paid,true);
+    assert.equal(Number((await db.query("select amount from ps_fine_payments where id=$1",[requestId])).rows[0].amount),paid.rules_snapshot.absentFineAmount);
+    await assert.rejects(db.query("update ps_fine_payments set amount=1"), /permission denied/);
+    await assert.rejects(db.query("select ps_reverse_fine_payment($1,$2,$3,' ')",[paid.id,paid.version,'99999999-9999-4999-8999-999999999999']), /Alasan/);
+    await db.query("select ps_reverse_fine_payment($1,$2,$3,'Salah pencatatan')",[paid.id,paid.version,'99999999-9999-4999-8999-999999999999']);
+    assert.equal((await db.query("select fine_paid from ps_shifts where id=$1",[paid.id])).rows[0].fine_paid,false);
+    assert.equal((await db.query("select * from ps_fine_payments where shift_id=$1",[paid.id])).rows.length,2);
+    await actor(OTHER);
+    assert.equal((await db.query("select * from ps_fine_payments")).rows.length,0);
+    await assert.rejects(db.query("select ps_record_fine_payment($1,1,$2,now(),'No','')",[paid.id,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']), /Admin required/);
+  });
+
 });

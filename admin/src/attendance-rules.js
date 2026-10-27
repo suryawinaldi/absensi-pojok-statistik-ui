@@ -18,7 +18,7 @@ export function contribution(shift, session) {
   const totalMinutes = durationMinutes(shift, session);
   return {
     totalMinutes,
-    regularSessions: !shift.extra && totalMinutes > 0 ? 1 : 0,
+    regularSessions: !shift.extra && shift.status === "Hadir" ? 1 : 0,
     extraMinutes: shift.extra ? totalMinutes : 0,
   };
 }

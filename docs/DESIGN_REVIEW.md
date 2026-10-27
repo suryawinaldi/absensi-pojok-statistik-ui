@@ -21,3 +21,8 @@ Logo masih memakai JPG lama dari logo.txt. PNG lampiran terlihat di chat tetapi 
 Build tidak lagi menerbitkan /legacy/. Periode aktif dapat diubah, profil menyimpan periode pilihan, dan direktori dapat difilter per periode. Label laporan semua waktu tidak lagi menyebut tahun tetap. Migrasi baru menyimpan aturan kehadiran di server, mempertahankannya saat konfigurasi berubah, menolak manipulasi snapshot, serta melindungi catatan lunas dari perubahan/penghapusan. Jam operasional divalidasi di form dan database. Input pencarian denda mempertahankan fokus saat mengetik. Tes browser telah memeriksa unduhan CSV sesuai filter dan pengaturan periode. Label mobile dan input diperbesar.
 
 Penerapan masih lokal: migrasi Supabase perlu diterapkan sebelum frontend baru dipublikasikan. Catatan lama diberi baseline aturan saat migrasi, bukan rekonstruksi historis. UI menampilkan penjelasan baseline pada pengaturan. Penonaktifan akses tabel legacy dan deployment lama, UI audit lengkap, serta backup/restore masih memerlukan pekerjaan lanjutan. Logo PNG baru belum tersedia sebagai file lokal.
+
+
+## Perbaikan keandalan 27 Oktober 2026
+
+Prioritas audit sudah ditangani melalui guard form, pembatasan akses pengaturan lama, koreksi jadwal beralasan, transaksi dan reversal denda, penyatuan definisi sesi reguler, ringkasan operasional di beranda, serta navigasi mobile yang lebih terbaca. Data lunas lama tetap ditandai baseline. Indikator usia catatan layanan bukan pengukuran respons LINE. Batas tersisa: pembayaran parsial, restore draft lintas sesi, integrasi pesan/publikasi otomatis, dan pengaturan proteksi password yang memerlukan konfigurasi Auth terpisah.

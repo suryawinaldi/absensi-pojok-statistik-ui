@@ -4,7 +4,7 @@ export const CLIENT_STATUSES = ['Baru','Dalam penanganan','Menunggu klien','Sele
 export const eligibleOnlineAgent = a => Boolean(a?.active && a.division === 'Pelayanan dan Konsultasi');
 export const onlineWeekday = date => new Date(`${date}T12:00:00+07:00`).getUTCDay();
 export function onlineAssignment(roster, agents, channel, date, time = null) {
-  const row = roster.filter(r => r.channel === channel && r.weekday === onlineWeekday(date)
+  const row = roster.filter(r => !r.cancelled_at && r.channel === channel && r.weekday === onlineWeekday(date)
     && r.valid_from <= date && (!r.valid_until || r.valid_until >= date)
     && (!r.exception_date || r.exception_date === date))
     .sort((a,b) => Number(Boolean(b.exception_date)) - Number(Boolean(a.exception_date)))[0];
